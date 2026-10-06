@@ -1,6 +1,7 @@
 package jwsbb_test
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -9,6 +10,8 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
+	stdbase64 "encoding/base64"
+	"fmt"
 	"hash"
 	"testing"
 
@@ -204,6 +207,57 @@ func TestSignVerifyMalformedEd25519KeyDoesNotPanic(t *testing.T) {
 				err := jwsbb.Verify(k.key, alg, payload, signature)
 				require.Error(t, err, "Verify must return an error, not panic")
 			})
+		}
+	}
+}
+
+var capacityResult []byte
+
+func TestSignBufferCapacity(t *testing.T) {
+	for _, encoder := range []*stdbase64.Encoding{stdbase64.RawURLEncoding, stdbase64.URLEncoding} {
+		for _, encoded := range []bool{false, true} {
+			for _, size := range []int{0, 1, 2, 3, 1 << 20} {
+				t.Run(fmt.Sprintf("padding=%v/encoded=%v/size=%d", encoder == stdbase64.URLEncoding, encoded, size), func(t *testing.T) {
+					hdr := []byte(`{"alg":"HS256","kid":"ab"}`)
+					payload := bytes.Repeat([]byte("x"), size)
+					want := encoder.EncodeToString(hdr) + "."
+					if encoded {
+						want += encoder.EncodeToString(payload)
+					} else {
+						want += string(payload)
+					}
+					got := jwsbb.SignBuffer(nil, hdr, payload, encoder, encoded)
+					require.Equal(t, want, string(got))
+					require.Equal(t, len(got), cap(got), "no spare payload allocation")
+					reuse := make([]byte, 0, len(got))
+					require.Equal(t, float64(0), testing.AllocsPerRun(100, func() { capacityResult = jwsbb.SignBuffer(reuse, hdr, payload, encoder, encoded) }))
+					require.Equal(t, float64(1), testing.AllocsPerRun(100, func() { capacityResult = jwsbb.SignBuffer(nil, hdr, payload, encoder, encoded) }))
+					require.Equal(t, want, string(capacityResult))
+				})
+			}
+		}
+	}
+}
+
+func BenchmarkSignBufferCapacity(b *testing.B) {
+	for _, encoded := range []bool{false, true} {
+		for _, size := range []int{1, 1024, 1 << 20} {
+			for _, reuse := range []bool{false, true} {
+				b.Run(fmt.Sprintf("encoded=%v/size=%d/reuse=%v", encoded, size, reuse), func(b *testing.B) {
+					hdr := []byte(`{"alg":"HS256","kid":"ab"}`)
+					payload := bytes.Repeat([]byte("x"), size)
+					var buf []byte
+					if reuse {
+						buf = jwsbb.SignBuffer(nil, hdr, payload, stdbase64.RawURLEncoding, encoded)
+					}
+					b.ReportAllocs()
+					b.SetBytes(int64(size))
+					b.ResetTimer()
+					for b.Loop() {
+						capacityResult = jwsbb.SignBuffer(buf, hdr, payload, stdbase64.RawURLEncoding, encoded)
+					}
+				})
+			}
 		}
 	}
 }
