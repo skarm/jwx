@@ -621,10 +621,18 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: AudienceKey, Value: t.audience})
 	}
 	if t.expiration != nil {
-		pairs = append(pairs, claimPair{Name: ExpirationKey, Value: t.expiration.Unix()})
+		var value any = t.expiration.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.expiration.String())
+		}
+		pairs = append(pairs, claimPair{Name: ExpirationKey, Value: value})
 	}
 	if t.issuedAt != nil {
-		pairs = append(pairs, claimPair{Name: IssuedAtKey, Value: t.issuedAt.Unix()})
+		var value any = t.issuedAt.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.issuedAt.String())
+		}
+		pairs = append(pairs, claimPair{Name: IssuedAtKey, Value: value})
 	}
 	if t.issuer != nil {
 		pairs = append(pairs, claimPair{Name: IssuerKey, Value: *(t.issuer)})
@@ -633,7 +641,11 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: JwtIDKey, Value: *(t.jwtID)})
 	}
 	if t.notBefore != nil {
-		pairs = append(pairs, claimPair{Name: NotBeforeKey, Value: t.notBefore.Unix()})
+		var value any = t.notBefore.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.notBefore.String())
+		}
+		pairs = append(pairs, claimPair{Name: NotBeforeKey, Value: value})
 	}
 	if t.subject != nil {
 		pairs = append(pairs, claimPair{Name: SubjectKey, Value: *(t.subject)})

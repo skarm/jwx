@@ -505,7 +505,11 @@ func generateTokenMakePairsAndMarshal(o *codegen.Output, obj *codegen.Object, pk
 		if f.Name(false) == `audience` {
 			o.L("pairs = append(pairs, claimPair{Name: %sKey, Value: t.audience})", f.Name(true))
 		} else if f.Type() == "types.NumericDate" {
-			o.L("pairs = append(pairs, claimPair{Name: %sKey, Value: t.%s.Unix()})", f.Name(true), f.Name(false))
+			o.L("var value any = t.%s.Unix()", f.Name(false))
+			o.L("if types.FormatPrecision.Load() > 0 {")
+			o.L("value = json.RawMessage(t.%s.String())", f.Name(false))
+			o.L("}")
+			o.L("pairs = append(pairs, claimPair{Name: %sKey, Value: value})", f.Name(true))
 		} else if f.Type() == "[]byte" {
 			o.L("pairs = append(pairs, claimPair{Name: %sKey, Value: base64.EncodeToString(t.%s)})", f.Name(true), f.Name(false))
 		} else {

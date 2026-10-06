@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -75,9 +76,9 @@ func parseNumericString(x string) (time.Time, error) {
 	if Pedantic.Load() != 1 {
 		// This is an escape hatch for non-conformant providers
 		// that gives us RFC3339 instead of epoch time
-		for _, r := range x {
+		for i, r := range x {
 			// 0x30 = '0', 0x39 = '9', 0x2E = tokens.Period
-			if (r >= 0x30 && r <= 0x39) || r == 0x2E {
+			if (r >= 0x30 && r <= 0x39) || r == 0x2E || (i == 0 && r == '-') {
 				continue
 			}
 
@@ -118,6 +119,9 @@ func parseNumericString(x string) (time.Time, error) {
 			return t, fmt.Errorf(`failed to parse fractional value %q: %w`, fractional, err)
 		}
 		nsecs = v
+		if strings.HasPrefix(x, "-") {
+			nsecs = -nsecs
+		}
 	}
 
 	return time.Unix(n, nsecs).UTC(), nil
@@ -135,7 +139,7 @@ func (n *NumericDate) Accept(v any) error {
 	case float64:
 		tv, err := parseNumericString(fmt.Sprintf(`%.9f`, x))
 		if err != nil {
-			return fmt.Errorf(`failed to accept float32 %.9f: %w`, x, err)
+			return fmt.Errorf(`failed to accept float64 %.9f: %w`, x, err)
 		}
 		t = tv
 	case string:
@@ -164,21 +168,17 @@ func (n NumericDate) String() string {
 		return strconv.FormatInt(n.Unix(), 10)
 	}
 
-	// This is cheating, but it's better (easier) than doing floating point math
-	// We basically munge with strings after formatting an integer value
-	// for nanoseconds since epoch
-	s := strconv.FormatInt(n.UnixNano(), 10)
-	for len(s) < int(MaxPrecision) {
-		s = "0" + s
+	// UnixNano overflows outside 1678--2262. Format seconds and fractional
+	// nanoseconds separately, converting negative times to their magnitude.
+	seconds, nanos := n.Unix(), int64(n.Nanosecond())
+	whole := strconv.FormatInt(seconds, 10)
+	if seconds < 0 && nanos > 0 {
+		whole = "-" + strconv.FormatInt(-(seconds+1), 10)
+		nanos = 1_000_000_000 - nanos
 	}
+	fraction := fmt.Sprintf("%09d", nanos)
+	return whole + "." + fraction[:formatPrecision]
 
-	slwhole := len(s) - int(MaxPrecision)
-	s = s[:slwhole] + "." + s[slwhole:slwhole+int(formatPrecision)]
-	if s[0] == tokens.Period {
-		s = "0" + s
-	}
-
-	return s
 }
 
 // MarshalJSON translates from internal representation to JSON NumericDate
@@ -188,10 +188,11 @@ func (n *NumericDate) MarshalJSON() ([]byte, error) {
 		return json.Marshal(nil)
 	}
 
-	return json.Marshal(n.String())
+	return []byte(n.String()), nil
 }
 
 func (n *NumericDate) UnmarshalJSON(data []byte) error {
+	data = bytes.Trim(data, " \t\r\n")
 	// Fast path: integer timestamps are the overwhelmingly common case in JWTs.
 	// Parse them directly without going through json.Unmarshal → any → float64 → fmt.Sprintf → parseNumericString.
 	if len(data) > 0 && data[0] >= '0' && data[0] <= '9' {
@@ -214,6 +215,18 @@ func (n *NumericDate) UnmarshalJSON(data []byte) error {
 				return nil
 			}
 		}
+	}
+
+	if len(data) > 0 && (data[0] == '-' || (data[0] >= '0' && data[0] <= '9')) && !strings.ContainsAny(string(data), "eE") {
+		if !json.RawMessage(data).IsValid() {
+			return fmt.Errorf(`invalid JSON number for NumericDate`)
+		}
+		var parsed NumericDate
+		if err := parsed.Accept(string(data)); err != nil {
+			return err
+		}
+		*n = parsed
+		return nil
 	}
 
 	// Slow path: handles floats, strings, negative numbers, etc.

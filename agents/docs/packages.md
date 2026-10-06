@@ -162,3 +162,5 @@ Shared utilities. Not public API.
 | `jwxtest` | Test key generation helpers (RSA, ECDSA, Ed25519, symmetric) |
 | `tokens` | String constants for algorithm names and separators |
 | `pool` | Generic object pool (`Pool[T]`, `SlicePool[T]`) |
+
+NumericDate JSON decimals preserve configured format precision for both JWT and OpenID tokens, including signed payloads and Equal comparisons. NumericDate parsing preserves decimal nanoseconds and applies negative signs to the entire value.

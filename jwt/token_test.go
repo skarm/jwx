@@ -1,14 +1,19 @@
 package jwt_test
 
 import (
+	"bytes"
+	stdjson "encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/internal/json"
-
 	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt/internal/types"
+	"github.com/lestrrat-go/jwx/v4/jwt/openid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -334,4 +339,104 @@ func TestClaimNameCannotInjectMembers(t *testing.T) {
 	v, ok := parsed.Field(name)
 	require.True(t, ok, `the original claim should be present`)
 	require.Equal(t, true, v, `the original claim value should be preserved`)
+}
+
+func TestNumericDateTokenPrecision(t *testing.T) {
+	oldParse, oldFormat, oldPedantic := types.ParsePrecision.Load(), types.FormatPrecision.Load(), types.Pedantic.Load()
+	t.Cleanup(func() {
+		types.ParsePrecision.Store(oldParse)
+		types.FormatPrecision.Store(oldFormat)
+		types.Pedantic.Store(oldPedantic)
+	})
+	require.NoError(t, jwt.Settings(jwt.WithNumericDateParsePrecision(9)))
+	key := bytes.Repeat([]byte{42}, 32)
+	for _, oidc := range []bool{false, true} {
+		for _, precision := range []int{0, 3, 9} {
+			t.Run(fmt.Sprintf("openid=%v/precision=%d", oidc, precision), func(t *testing.T) {
+				require.NoError(t, jwt.Settings(jwt.WithNumericDateFormatPrecision(precision)))
+				tok := jwt.New()
+				if oidc {
+					tok = openid.New()
+				}
+				timestamp := time.Unix(2000000000, 123456789).UTC()
+				for _, name := range []string{jwt.ExpirationKey, jwt.IssuedAtKey, jwt.NotBeforeKey} {
+					require.NoError(t, tok.Set(name, timestamp))
+				}
+				raw, err := stdjson.Marshal(tok)
+				require.NoError(t, err)
+				var claims map[string]stdjson.RawMessage
+				require.NoError(t, stdjson.Unmarshal(raw, &claims))
+				want := map[int]string{0: "2000000000", 3: "2000000000.123", 9: "2000000000.123456789"}[precision]
+				for _, name := range []string{jwt.ExpirationKey, jwt.IssuedAtKey, jwt.NotBeforeKey} {
+					require.Equal(t, want, string(claims[name]))
+				}
+				wire, err := jwt.Sign(tok, jwt.WithKey(jwa.HS256(), key))
+				require.NoError(t, err)
+				payload, err := jws.Verify(wire, jws.WithKey(jwa.HS256(), key))
+				require.NoError(t, err)
+				require.JSONEq(t, string(raw), string(payload))
+				target := jwt.New()
+				if oidc {
+					target = openid.New()
+				}
+				parsed, err := jwt.Parse(wire, jwt.WithKey(jwa.HS256(), key), jwt.WithToken(target), jwt.WithValidate(false))
+				require.NoError(t, err)
+				got, ok := parsed.IssuedAt()
+				require.True(t, ok)
+				expected := timestamp
+				if precision == 0 {
+					expected = timestamp.Truncate(time.Second)
+				} else if precision == 3 {
+					expected = timestamp.Truncate(time.Millisecond)
+				}
+				require.Equal(t, expected, got)
+				other, err := tok.Clone()
+				require.NoError(t, err)
+				require.NoError(t, other.Set(jwt.IssuedAtKey, timestamp.Add(time.Millisecond)))
+				require.Equal(t, precision == 0, jwt.Equal(tok, other))
+			})
+		}
+	}
+}
+
+func TestNegativeFractionalNumericDate(t *testing.T) {
+	oldParse, oldFormat, oldPedantic := types.ParsePrecision.Load(), types.FormatPrecision.Load(), types.Pedantic.Load()
+	t.Cleanup(func() {
+		types.ParsePrecision.Store(oldParse)
+		types.FormatPrecision.Store(oldFormat)
+		types.Pedantic.Store(oldPedantic)
+	})
+	for _, pedantic := range []bool{false, true} {
+		for _, c := range []struct {
+			number         string
+			seconds, nanos int64
+		}{
+			{"-1.5", -2, 500000000}, {"-0.5", -1, 500000000}, {"-1.000000001", -2, 999999999},
+			{"2000000000.123456789", 2000000000, 123456789}, {"-2208988800.000000001", -2208988801, 999999999}, {"10000000000.123456789", 10000000000, 123456789},
+		} {
+			t.Run(fmt.Sprintf("pedantic=%v/%s", pedantic, c.number), func(t *testing.T) {
+				require.NoError(t, jwt.Settings(jwt.WithNumericDateParsePrecision(9), jwt.WithNumericDateFormatPrecision(9), jwt.WithNumericDateParsePedantic(pedantic)))
+				tok, err := jwt.ParseInsecure([]byte(`{"iat":` + c.number + `}`))
+				require.NoError(t, err)
+				got, ok := tok.IssuedAt()
+				require.True(t, ok)
+				require.Equal(t, time.Unix(c.seconds, c.nanos).UTC(), got)
+				raw, err := stdjson.Marshal(tok)
+				require.NoError(t, err)
+				again, err := jwt.ParseInsecure(raw)
+				require.NoError(t, err)
+				gotAgain, _ := again.IssuedAt()
+				require.Equal(t, got, gotAgain)
+			})
+		}
+	}
+	require.NoError(t, jwt.Settings(jwt.WithNumericDateFormatPrecision(3)))
+	for _, c := range []struct {
+		time time.Time
+		want string
+	}{
+		{time.Unix(-1, 999999999), "-0.000"}, {time.Unix(-1, 500000000), "-0.500"}, {time.Unix(-2, 0), "-2.000"}, {time.Unix(0, 1), "0.000"},
+	} {
+		require.Equal(t, c.want, (types.NumericDate{Time: c.time}).String())
+	}
 }

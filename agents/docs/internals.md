@@ -212,3 +212,5 @@ Do not re-flag this as a UX or security finding (adversarial review JWA-20260426
 Examples and benchmarks are external companion repos (`github.com/jwx-go/examples`, `github.com/jwx-go/benchmarks`), locally available via `go.work` when checked out.
 
 No `go.work` file is committed. Nested modules use `replace` directives for local development.
+
+JWT/OpenID generated makePairs serializes NumericDate claims as Unix integers at the default format precision and numeric JSON decimals at nonzero format precision. Decimal parsing preserves nanoseconds without a float64 round trip and applies negative signs to both whole and fractional seconds.

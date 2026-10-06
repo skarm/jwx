@@ -1507,7 +1507,11 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: EmailVerifiedKey, Value: *(t.emailVerified)})
 	}
 	if t.expiration != nil {
-		pairs = append(pairs, claimPair{Name: ExpirationKey, Value: t.expiration.Unix()})
+		var value any = t.expiration.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.expiration.String())
+		}
+		pairs = append(pairs, claimPair{Name: ExpirationKey, Value: value})
 	}
 	if t.familyName != nil {
 		pairs = append(pairs, claimPair{Name: FamilyNameKey, Value: *(t.familyName)})
@@ -1519,7 +1523,11 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: GivenNameKey, Value: *(t.givenName)})
 	}
 	if t.issuedAt != nil {
-		pairs = append(pairs, claimPair{Name: IssuedAtKey, Value: t.issuedAt.Unix()})
+		var value any = t.issuedAt.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.issuedAt.String())
+		}
+		pairs = append(pairs, claimPair{Name: IssuedAtKey, Value: value})
 	}
 	if t.issuer != nil {
 		pairs = append(pairs, claimPair{Name: IssuerKey, Value: *(t.issuer)})
@@ -1540,7 +1548,11 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: NicknameKey, Value: *(t.nickname)})
 	}
 	if t.notBefore != nil {
-		pairs = append(pairs, claimPair{Name: NotBeforeKey, Value: t.notBefore.Unix()})
+		var value any = t.notBefore.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.notBefore.String())
+		}
+		pairs = append(pairs, claimPair{Name: NotBeforeKey, Value: value})
 	}
 	if t.phoneNumber != nil {
 		pairs = append(pairs, claimPair{Name: PhoneNumberKey, Value: *(t.phoneNumber)})
@@ -1561,7 +1573,11 @@ func (t *stdToken) makePairs() []claimPair {
 		pairs = append(pairs, claimPair{Name: SubjectKey, Value: *(t.subject)})
 	}
 	if t.updatedAt != nil {
-		pairs = append(pairs, claimPair{Name: UpdatedAtKey, Value: t.updatedAt.Unix()})
+		var value any = t.updatedAt.Unix()
+		if types.FormatPrecision.Load() > 0 {
+			value = json.RawMessage(t.updatedAt.String())
+		}
+		pairs = append(pairs, claimPair{Name: UpdatedAtKey, Value: value})
 	}
 	if t.website != nil {
 		pairs = append(pairs, claimPair{Name: WebsiteKey, Value: *(t.website)})
