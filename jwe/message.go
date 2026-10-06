@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/lestrrat-go/jwx/v4/internal/base64"
@@ -21,6 +22,7 @@ func NewRecipient() Recipient {
 
 func (r *stdRecipient) SetHeaders(h Headers) error {
 	r.headers = h
+	r.synthetic = nil
 	return nil
 }
 
@@ -50,6 +52,7 @@ func (r *stdRecipient) UnmarshalJSON(buf []byte) error {
 	}
 
 	r.headers = proxy.Headers
+	r.synthetic = nil
 	decoded, err := base64.DecodeString(proxy.EncryptedKey)
 	if err != nil {
 		return fmt.Errorf(`failed to decode "encrypted_key": %w`, err)
@@ -62,18 +65,67 @@ func (r *stdRecipient) MarshalJSON() ([]byte, error) {
 	buf := pool.BytesBuffer().Get()
 	defer pool.BytesBuffer().Put(buf)
 
-	buf.WriteString(`{"header":`)
-	hdrbuf, err := json.Marshal(r.headers)
+	buf.WriteString(`{`)
+	hdrs, err := r.wireHeaders()
 	if err != nil {
-		return nil, fmt.Errorf(`failed to marshal recipient header: %w`, err)
+		return nil, err
 	}
-	buf.Write(hdrbuf)
-	buf.WriteString(`,"encrypted_key":"`)
+	if hdrs != nil && (r.synthetic == nil || !hdrs.(isZeroer).isZero()) {
+		hdrbuf, err := json.Marshal(hdrs)
+		if err != nil {
+			return nil, fmt.Errorf(`failed to marshal recipient header: %w`, err)
+		}
+		buf.WriteString(`"header":`)
+		buf.Write(hdrbuf)
+		buf.WriteByte(',')
+	}
+	buf.WriteString(`"encrypted_key":"`)
 	buf.WriteString(base64.EncodeToString(r.encryptedKey))
 	buf.WriteString(`"}`)
 
 	ret := bytes.Clone(buf.Bytes())
 	return ret, nil
+}
+
+// Parser convenience fields are not wire recipient headers. Preserve additions
+// through Headers().Set, and reject changes to copied fields instead of silently
+// dropping them. This clone is used only when reserializing parsed recipients.
+func (r *stdRecipient) wireHeaders() (Headers, error) {
+	if r.synthetic == nil {
+		return r.headers, nil
+	}
+	hdrs, err := r.headers.Clone()
+	if err != nil {
+		return nil, err
+	}
+	omit := func(name string, original any) error {
+		if value, ok := hdrs.Field(name); ok {
+			if !reflect.DeepEqual(value, original) {
+				return fmt.Errorf(`copied protected header %q was changed in recipient headers; use SetHeaders for explicit recipient headers`, name)
+			}
+			return hdrs.Remove(name)
+		}
+		return nil
+	}
+	for _, name := range stdHeaderNames {
+		if value, ok := r.synthetic.Field(name); ok {
+			if err := omit(name, value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	original, ok := r.synthetic.(*stdHeaders)
+	if !ok {
+		return nil, fmt.Errorf(`unexpected parsed header type %T`, r.synthetic)
+	}
+	original.mu.RLock()
+	defer original.mu.RUnlock()
+	for name, value := range original.privateParams {
+		if err := omit(name, value); err != nil {
+			return nil, err
+		}
+	}
+	return hdrs, nil
 }
 
 // NewMessage creates a new message
@@ -149,6 +201,7 @@ func (m *Message) Set(k string, v any) error {
 			return fmt.Errorf(`invalid value %T for %s key`, v, ProtectedHeadersKey)
 		}
 		m.protectedHeaders = cv
+		m.protectedAbsent = false
 	case RecipientsKey:
 		cv, ok := v.([]Recipient)
 		if !ok {
@@ -227,7 +280,7 @@ func (m *Message) MarshalJSON() ([]byte, error) {
 		fields = append(fields, jsonKV{Key: InitializationVectorKey, Value: v})
 	}
 
-	if h := m.ProtectedHeaders(); h != nil {
+	if h := m.ProtectedHeaders(); h != nil && (!m.protectedAbsent || !h.(isZeroer).isZero()) {
 		v, err := h.Encode()
 		if err != nil {
 			return nil, fmt.Errorf(`failed to encode protected headers: %w`, err)
@@ -258,7 +311,15 @@ func (m *Message) MarshalJSON() ([]byte, error) {
 
 	if recipients := m.Recipients(); len(recipients) > 0 {
 		if len(recipients) == 1 { // Use flattened format
-			if hdrs := recipients[0].Headers(); hdrs != nil {
+			hdrs := recipients[0].Headers()
+			if r, ok := recipients[0].(*stdRecipient); ok {
+				var err error
+				hdrs, err = r.wireHeaders()
+				if err != nil {
+					return nil, err
+				}
+			}
+			if hdrs != nil {
 				var skipHeaders bool
 				if zeroer, ok := hdrs.(isZeroer); ok {
 					if zeroer.isZero() {
@@ -338,21 +399,29 @@ func (m *Message) UnmarshalJSON(buf []byte) error {
 		return fmt.Errorf(`failed to unmashal JSON into message: %w`, err)
 	}
 
-	// Get the string value
+	m.recipients = nil
+	m.unprotectedHeaders = nil
+	m.rawProtectedHeaders = nil
+	m.protectedAbsent = proxy.ProtectedHeaders == nil
 	var protectedHeadersStr string
-	if err := json.Unmarshal(proxy.ProtectedHeaders, &protectedHeadersStr); err != nil {
-		return fmt.Errorf(`failed to decode protected headers (1): %w`, err)
-	}
-
-	// It's now in _quoted_ base64 string. Decode it
-	protectedHeadersRaw, err := base64.DecodeString(protectedHeadersStr)
-	if err != nil {
-		return fmt.Errorf(`failed to base64 decoded protected headers buffer: %w`, err)
-	}
-
 	h := NewHeaders()
-	if err := json.Unmarshal(protectedHeadersRaw, h); err != nil {
-		return fmt.Errorf(`failed to decode protected headers (2): %w`, err)
+	if !m.protectedAbsent {
+		// A present protected member must be a string containing encoded JSON.
+		var str *string
+		if err := json.Unmarshal(proxy.ProtectedHeaders, &str); err != nil {
+			return fmt.Errorf(`failed to decode protected headers: %w`, err)
+		}
+		if str == nil {
+			return fmt.Errorf(`protected headers must be a string`)
+		}
+		protectedHeadersStr = *str
+		raw, err := base64.DecodeString(protectedHeadersStr)
+		if err != nil {
+			return fmt.Errorf(`failed to base64 decode protected headers: %w`, err)
+		}
+		if err := json.Unmarshal(raw, h); err != nil {
+			return fmt.Errorf(`failed to decode protected headers: %w`, err)
+		}
 	}
 
 	// if this were a flattened message, we would see a "header" and "ciphertext"
@@ -436,7 +505,7 @@ func (m *Message) UnmarshalJSON(buf []byte) error {
 	m.protectedHeaders = h
 	if m.storeProtectedHeaders {
 		// this is later used for decryption
-		m.rawProtectedHeaders = base64.Encode(protectedHeadersRaw)
+		m.rawProtectedHeaders = []byte(protectedHeadersStr)
 	}
 
 	if iz, ok := proxy.UnprotectedHeaders.(isZeroer); ok {
@@ -445,7 +514,10 @@ func (m *Message) UnmarshalJSON(buf []byte) error {
 		}
 	}
 
-	if len(m.recipients) == 0 {
+	if err := validateJSONHeaders(m); err != nil {
+		return err
+	}
+	if len(m.recipients) == 0 || (proxy.Headers == nil && len(proxy.EncryptedKey) > 0) {
 		if err := m.makeDummyRecipient(proxy.EncryptedKey, m.protectedHeaders); err != nil {
 			return fmt.Errorf(`failed to setup recipient: %w`, err)
 		}
@@ -465,6 +537,12 @@ func (m *Message) makeDummyRecipient(enckeybuf string, protected Headers) error 
 	if err := hdrs.Remove(ContentEncryptionKey); err != nil {
 		return fmt.Errorf(`failed to remove %#v from public header: %w`, ContentEncryptionKey, err)
 	}
+	// Keep the original convenience fields separate from both mutable
+	// protected headers and the recipient headers exposed to callers.
+	synthetic, err := hdrs.Clone()
+	if err != nil {
+		return fmt.Errorf(`failed to snapshot synthetic headers: %w`, err)
+	}
 
 	enckey, err := base64.DecodeString(enckeybuf)
 	if err != nil {
@@ -474,6 +552,7 @@ func (m *Message) makeDummyRecipient(enckeybuf string, protected Headers) error 
 	if err := m.Set(RecipientsKey, []Recipient{
 		&stdRecipient{
 			headers:      hdrs,
+			synthetic:    synthetic,
 			encryptedKey: enckey,
 		},
 	}); err != nil {

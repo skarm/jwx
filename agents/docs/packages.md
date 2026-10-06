@@ -80,7 +80,9 @@ JSON Web Signatures per RFC 7515. Sign, verify, parse.
 JSON Web Encryption per RFC 7516. Encrypt, decrypt, parse.
 
 `Message.MarshalJSON` writes shared `unprotected` headers as a JSON object,
-preserving them across Parse → Marshal → Parse.
+preserving them across Parse → Marshal → Parse. JSON parsing checks header
+disjointness and equal effective `enc` values across recipients before key
+selection. An explicit `crit: null` is rejected during header decoding.
 
 - **Encrypt(payload []byte, ...EncryptOption) ([]byte, error)** — encrypt payload
 - **EncryptStatic(payload, cek []byte, ...EncryptOption) ([]byte, error)** — encrypt with caller-supplied content encryption key
@@ -162,3 +164,5 @@ Shared utilities. Not public API.
 | `jwxtest` | Test key generation helpers (RSA, ECDSA, Ed25519, symmetric) |
 | `tokens` | String constants for algorithm names and separators |
 | `pool` | Generic object pool (`Pool[T]`, `SlicePool[T]`) |
+
+JWE JSON parsing rejects overlapping protected/shared/per-recipient header names and unprotected `crit`/`zip`. Decryption resolves algorithm parameters from the complete header union; omitted protected headers use empty AAD. Compact synthetic recipient headers are not wire-level duplicates.

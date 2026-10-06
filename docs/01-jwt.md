@@ -99,8 +99,10 @@ func Example_jwt_parse() {
 source: [examples/jwt_parse_example_test.go](https://github.com/jwx-go/examples/blob/v4/jwt_parse_example_test.go)
 <!-- END INCLUDE -->
 
-Note that the above form performs only signature verification and no validation of the JWT token itself.
-In order to perform validation, please use `Validate()`.
+`jwt.Parse` verifies the signature and validates the token by default. Pass validation options such as
+`jwt.WithIssuer` and `jwt.WithAudience` to require application-specific claim values. Use
+`jwt.WithValidate(false)` only when claim validation is intentionally deferred; `jwt.Validate` can
+validate an already parsed token.
 
 ## Parse a JWT from a filesystem
 
@@ -1403,7 +1405,7 @@ source: [examples/jwt_serialize_jws_example_test.go](https://github.com/jwx-go/e
 
 The `jwt` package provides a `Serializer` object to allow users to serialize a token using an arbitrary combination of processors.
 
-If for whatever reason the built-in `(jwt.Serializer).Sign()` and `(jwt.Serializer).Encrypt()` do not work for you, you may choose to provider a custom serialization step using `(jwt.Serialize).Step()` -- but at this point it may just be easier if you hand-rolled your own serialization.
+If the built-in `(jwt.Serializer).Sign()` and `(jwt.Serializer).Encrypt()` do not fit your processing steps, add a custom `jwt.SerializeStep` with `(jwt.Serializer).Step()`.
 
 The following example, encrypts a token using JWE, then uses JWS to sign the encrypted payload:
 
@@ -1654,23 +1656,26 @@ Please [look at the JWS documentation for it](./02-jws.md#parse-a-jws-message-an
 
 ## Get/Set fields
 
-Any field in the token can be accessed in a uniform away using `(jwt.Token).Get()`
+Any field in the token can be accessed with `(jwt.Token).Field()`.
 
 ```go
-var v interface{} // can be concrete type, if you know the type beforehand
-err := token.Get(name, &v)
+v, ok := token.Field(name)
 ```
 
 If the field corresponding to `name` does not exist, the second return value will be `false`.
 
-The value `v` is returned as `interface{}`, as there is no way of knowing what the underlying type may be for user defined fields.
+The value `v` is returned as `any`, because private fields may have arbitrary types. If the expected type is known, use the generic accessor:
+
+```go
+scope, err := jwt.Get[string](token, "scope")
+```
 
 For pre-defined fields whose types are known, you can use the convenience methods such as `Subject()`, `Issuer()`, `NotBefore()`, etc.
 
 ```go
-s := token.Subject()
-s := token.Issuer()
-t := token.NotBefore()
+subject, subjectPresent := token.Subject()
+issuer, issuerPresent := token.Issuer()
+notBefore, notBeforePresent := token.NotBefore()
 ```
 
 For setting field values, there is only one path, which is to use the `Set()` method. If you are initializing a token you may also [use the builder pattern](#using-builder)

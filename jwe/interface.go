@@ -56,19 +56,16 @@ type KeyIDer interface {
 //
 // Library contract for implementers (read carefully):
 //
-//   - The library has already verified that the wire-level `alg` is
-//     consistent across the protected header and per-recipient header
-//     (RFC 7516 §7.2.1 disjointness). Your DecryptKey is invoked with
-//     the alg the library has decided to use for this attempt.
+//   - JSON wire header names are disjoint across protected, shared
+//     unprotected and per-recipient locations. The supplied alg has been
+//     matched against the complete header union before DecryptKey is called.
+//     Compact parsing may expose a synthetic recipient header containing
+//     copies of protected values; these are not additional wire headers.
 //   - The library has NOT validated key-shape-vs-alg compatibility for
-//     your custom decrypter. You receive the raw recipient and message;
-//     headers are split between protected (signed/integrity-protected)
-//     and per-recipient (unprotected). If you read a value from the
-//     unprotected per-recipient header for a security decision, you
-//     must enforce its consistency with the protected header yourself
-//     — the standard built-in decrypters route through a merged-headers
-//     helper that performs this check, but DecryptKey receives the
-//     unmerged inputs.
+//     your custom decrypter. Read algorithm parameters from the full header
+//     union. Shared and per-recipient headers are unprotected; only protected
+//     values are authenticated. Apply any additional application policy
+//     before trusting those values for other security decisions.
 //   - Returning a non-nil error short-circuits this recipient. Returning
 //     nil bytes with nil error is treated as "decryption failed" by the
 //     dispatcher (use a non-nil error for clarity).
@@ -115,6 +112,7 @@ type Recipient interface {
 }
 
 type stdRecipient struct {
+	synthetic Headers // Independent snapshot of fields copied by compact/headerless parsing.
 	// Comments on each field are taken from https://datatracker.ietf.org/doc/html/rfc7516
 	//
 	// header
@@ -242,6 +240,7 @@ type Message struct {
 	// These two fields below are not available for the public consumers of this object.
 	// rawProtectedHeaders stores the original protected header buffer
 	rawProtectedHeaders []byte
+	protectedAbsent     bool // An omitted JSON protected header authenticates an empty prefix.
 	// storeProtectedHeaders is a hint to be used in UnmarshalJSON().
 	// When this flag is true, UnmarshalJSON() will populate the
 	// rawProtectedHeaders field

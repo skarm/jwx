@@ -169,7 +169,7 @@ source: [examples/jwe_encrypt_example_test.go](https://github.com/jwx-go/example
 
 Generally the only time you need to use a JSON serialization format is when you have to generate multiple recipients (encrypted keys) for a given payload using multiple encryption algorithms and keys.
 
-When this need arises, use the [`jwe.Encrypt()`](https://pkg.go.dev/github.com/lestrrat-go/jwx/v4/jws#Encrypt) function with the `jwe.WithJSON()` option and multiple `jwe.WithKey()` options:
+When this need arises, use the [`jwe.Encrypt()`](https://pkg.go.dev/github.com/lestrrat-go/jwx/v4/jwe#Encrypt) function with the `jwe.WithJSON()` option and multiple `jwe.WithKey()` options:
 
 <!-- INCLUDE(examples/jwe_encrypt_json_example_test.go) -->
 ```go
@@ -386,7 +386,7 @@ source: [examples/jwe_decrypt_with_key_example_test.go](https://github.com/jwx-g
 
 ## Decrypting using a JWKS
 
-To decrypt a payload using JWKS, the JWE's `kid` header selects a key from the set; the key's `alg` field (when present) is used for the decrypt-time dispatch. When the JWK lacks `alg`, the recipient's `alg` header (per-recipient first, then protected) is used as a fallback — `jwe.Decrypt` re-checks the chosen `alg` against the integrity-protected protected header before any cryptographic call (RFC 7516 §7.2.1).
+To decrypt a payload using JWKS, the JWE's `kid` header selects a key from the set; the key's `alg` field (when present) is used for the decrypt-time dispatch. When the JWK lacks `alg`, the JOSE header union (per-recipient, protected, then shared unprotected) supplies the fallback. `jwe.Decrypt` matches the selected algorithm against that union before any cryptographic call. JSON header names must be disjoint; shared and per-recipient headers are unprotected (RFC 7516 §7.2.1).
 
 For more discussion on why `alg` cannot be inferred from the key alone, see "[Why don't you automatically infer the algorithm for `jws.Verify`?](99-faq.md#why-dont-you-automatically-infer-the-algorithm-for-jwsverify-)" — the same reasoning applies to `jwe.Decrypt()`.
 
@@ -980,3 +980,5 @@ func createJWEEnvironmentHeaders(originalHeaders jwe.Headers, environment string
 ```
 source: [examples/jwe_filter_advanced_example_test.go](https://github.com/jwx-go/examples/blob/v4/jwe_filter_advanced_example_test.go)
 <!-- END INCLUDE -->
+
+JSON decryption accepts `alg`, `enc` and algorithm parameters in any JOSE header location. Every recipient's JOSE header must use the same `enc` value. The protected header may be omitted, in which case the protected AAD prefix is empty. `crit` and `zip` must be protected, and repeated header names are rejected even when their values agree. An explicit `crit: null` is rejected even when critical-value validation is disabled. Compact parser convenience fields are excluded when re-serializing as JSON; newly added recipient fields are preserved. Changing or removing a protected field does not relocate its original convenience copy into the recipient header. Changing protected fields requires recomputing the authentication tag.

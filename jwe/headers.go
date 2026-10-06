@@ -143,3 +143,69 @@ func (h *stdHeaders) Decode(buf []byte) error {
 
 	return nil
 }
+
+// validateJSONHeaders runs before compact-style synthetic recipients could be
+// introduced. The stdHeaders involved are distinct, freshly parsed objects.
+func validateJSONHeaders(m *Message) error {
+	shared := m.unprotectedHeaders
+	if shared != nil {
+		if shared.Has(CriticalKey) || shared.Has(CompressionKey) {
+			return fmt.Errorf(`"crit" and "zip" must be in the protected header`)
+		}
+		if err := validateDisjointParsedHeaders(m.protectedHeaders, shared); err != nil {
+			return err
+		}
+	}
+	baseEnc, baseHasEnc := m.protectedHeaders.ContentEncryption()
+	if !baseHasEnc && shared != nil {
+		baseEnc, baseHasEnc = shared.ContentEncryption()
+	}
+	firstEnc, firstHasEnc := baseEnc, baseHasEnc
+	for i, r := range m.recipients {
+		hdr := r.Headers()
+		if hdr != nil {
+			if hdr.Has(CriticalKey) || hdr.Has(CompressionKey) {
+				return fmt.Errorf(`recipient #%d: "crit" and "zip" must be in the protected header`, i+1)
+			}
+			if err := validateDisjointParsedHeaders(m.protectedHeaders, hdr); err != nil {
+				return fmt.Errorf(`recipient #%d: %w`, i+1, err)
+			}
+			if err := validateDisjointParsedHeaders(shared, hdr); err != nil {
+				return fmt.Errorf(`recipient #%d: %w`, i+1, err)
+			}
+		}
+		enc, hasEnc := baseEnc, baseHasEnc
+		if !hasEnc && hdr != nil {
+			enc, hasEnc = hdr.ContentEncryption()
+		}
+		if i == 0 {
+			firstEnc, firstHasEnc = enc, hasEnc
+		} else if hasEnc != firstHasEnc || enc != firstEnc {
+			return fmt.Errorf(`recipient #%d: all recipients must use the same content encryption ("enc") parameter`, i+1)
+		}
+	}
+	return nil
+}
+
+func validateDisjointParsedHeaders(left, right Headers) error {
+	if left == nil || right == nil {
+		return nil
+	}
+	for _, name := range stdHeaderNames {
+		if left.Has(name) && right.Has(name) {
+			return fmt.Errorf(`header parameter %q occurs in multiple JOSE header locations`, name)
+		}
+	}
+	h, ok := left.(*stdHeaders)
+	if !ok {
+		return fmt.Errorf(`unexpected parsed header type %T`, left)
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for name := range h.privateParams {
+		if right.Has(name) {
+			return fmt.Errorf(`header parameter %q occurs in multiple JOSE header locations`, name)
+		}
+	}
+	return nil
+}

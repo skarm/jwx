@@ -136,7 +136,7 @@ func (kp *keySetProvider) selectKey(sink KeySink, key jwk.Key, r Recipient, msg 
 	// jwe.Decrypt verifies the chosen key's algorithm against the message.
 	// jwe.Decrypt re-checks agreement before use, so trusting the header
 	// alg here does not widen the attack surface.
-	for _, hdr := range []Headers{r.Headers(), msg.ProtectedHeaders()} {
+	for _, hdr := range []Headers{r.Headers(), msg.ProtectedHeaders(), msg.UnprotectedHeaders()} {
 		if hdr == nil {
 			continue
 		}
@@ -160,7 +160,16 @@ func (kp *keySetProvider) FetchKeys(_ context.Context, sink KeySink, r Recipient
 	if kp.requireKid {
 		var key jwk.Key
 
-		wantedKid, ok := r.Headers().KeyID()
+		var wantedKid string
+		var ok bool
+		for _, hdr := range []Headers{r.Headers(), msg.ProtectedHeaders(), msg.UnprotectedHeaders()} {
+			if hdr != nil {
+				wantedKid, ok = hdr.KeyID()
+				if ok {
+					break
+				}
+			}
+		}
 		if !ok || wantedKid == "" {
 			return fmt.Errorf(`failed to find matching key: no key ID ("kid") specified in token but multiple keys available in key set`)
 		}

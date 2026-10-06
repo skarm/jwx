@@ -1,14 +1,53 @@
 package jwe
 
 import (
+	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"fmt"
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 )
+
+// Header merging should not grow with the number of builtin key candidates
+// supplied in one provider batch. Earlier candidates intentionally fail AEAD.
+func BenchmarkDecryptKeyCandidates(b *testing.B) {
+	key := bytes.Repeat([]byte{42}, 32)
+	payload := []byte("candidate key attempts")
+	wire, err := Encrypt(payload, WithKey(jwa.DIRECT(), key), WithContentEncryption(jwa.A256GCM()), WithJSON())
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, count := range []int{3, 20} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			keys := make([][]byte, count)
+			for i := range count - 1 {
+				keys[i] = bytes.Repeat([]byte{byte(i)}, 32)
+			}
+			keys[count-1] = key
+			provider := KeyProviderFunc(func(_ context.Context, sink KeySink, _ Recipient, _ *Message) error {
+				for _, candidate := range keys {
+					sink.Key(jwa.DIRECT(), candidate)
+				}
+				return nil
+			})
+			b.ReportAllocs()
+			for b.Loop() {
+				got, err := Decrypt(wire, WithKeyProvider(provider))
+				if err != nil {
+					b.Fatal(err)
+				}
+				if !bytes.Equal(payload, got) {
+					b.Fatal("unexpected plaintext")
+				}
+			}
+		})
+	}
+}
 
 func BenchmarkEncryptKey(b *testing.B) {
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)

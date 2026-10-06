@@ -517,20 +517,14 @@ func (dc *decryptContext) DecryptMessage(buf []byte) ([]byte, error) {
 		}
 	}
 
-	// Clone the shared (top-level) protected header as our working copy.
-	// We deliberately do NOT merge msg.unprotectedHeaders (the shared,
-	// top-level *unprotected* header) here: it is never covered by the
-	// AEAD tag, so it must not contribute algorithm parameters.
-	//
-	// Per-recipient unprotected headers are a separate case — RFC 7516
-	// §5.3 explicitly permits them to carry recipient-specific algorithm
-	// parameters (alg, epk, p2s, p2c, iv, tag, apu, apv, …), and
-	// decryptContent merges recipient.Headers() onto this base below.
-	// That merge is bounded by WithMaxRecipients and, for PBES2, by
-	// WithMaxPBES2Count (applied per recipient).
-	h, err := msg.protectedHeaders.Clone()
-	if err != nil {
-		return nil, fmt.Errorf(`jwe.Decrypt: failed to copy protected headers: %w`, err)
+	// Algorithm parameters come from the union of all three header locations.
+	// JSON parsing has already checked disjointness and protected-only fields.
+	h := msg.protectedHeaders
+	if msg.unprotectedHeaders != nil {
+		h, err = h.Merge(msg.unprotectedHeaders)
+		if err != nil {
+			return nil, fmt.Errorf(`jwe.Decrypt: failed to merge shared headers: %w`, err)
+		}
 	}
 
 	var aad []byte
@@ -539,7 +533,7 @@ func (dc *decryptContext) DecryptMessage(buf []byte) ([]byte, error) {
 	}
 
 	var computedAad []byte
-	if len(msg.rawProtectedHeaders) > 0 {
+	if msg.rawProtectedHeaders != nil {
 		computedAad = msg.rawProtectedHeaders
 	} else {
 		// this is probably not required once msg.Decrypt is deprecated
@@ -627,6 +621,9 @@ func (dc *decryptContext) tryRecipient(msg *Message, recipient Recipient, protec
 			continue
 		}
 
+		// Reuse the union for builtin key attempts from this provider. A new
+		// provider can mutate recipient headers, so each batch starts fresh.
+		var mergedHeaders Headers
 		for _, pair := range sink.list {
 			// Honor caller's deadline between (alg,key) pairs.
 			// Under WithRequireKid(false) + a large keyset, this
@@ -645,7 +642,7 @@ func (dc *decryptContext) tryRecipient(msg *Message, recipient Recipient, protec
 			alg := pair.alg.(jwa.KeyEncryptionAlgorithm)
 			key := pair.key
 
-			decrypted, err := dc.decryptContent(msg, alg, key, recipient, protectedHeaders, aad, computedAad)
+			decrypted, err := dc.decryptContent(msg, alg, key, recipient, protectedHeaders, &mergedHeaders, aad, computedAad)
 			if err != nil {
 				attemptErrors = append(attemptErrors, err)
 				continue
@@ -665,7 +662,7 @@ func (dc *decryptContext) tryRecipient(msg *Message, recipient Recipient, protec
 	return nil, fmt.Errorf(`tried %d keys, but failed to match any of the keys with recipient: %w`, tried, joinDecryptErrors(attemptErrors))
 }
 
-func (dc *decryptContext) decryptContent(msg *Message, alg jwa.KeyEncryptionAlgorithm, key any, recipient Recipient, protectedHeaders Headers, aad, computedAad []byte) ([]byte, error) {
+func (dc *decryptContext) decryptContent(msg *Message, alg jwa.KeyEncryptionAlgorithm, key any, recipient Recipient, sharedHeaders Headers, mergedHeaders *Headers, aad, computedAad []byte) ([]byte, error) {
 	if isKeyAlgorithmDisabled(alg) {
 		return nil, decryptError{fmt.Errorf(`jwe.Decrypt: key encryption algorithm %q is disabled by jwe.WithDisabledKeyAlgorithms`, alg)}
 	}
@@ -677,76 +674,36 @@ func (dc *decryptContext) decryptContent(msg *Message, alg jwa.KeyEncryptionAlgo
 		key = raw
 	}
 
-	ce, ok := msg.protectedHeaders.ContentEncryption()
+	if *mergedHeaders == nil {
+		h := sharedHeaders
+		if rh := recipient.Headers(); rh != nil {
+			if iz, ok := rh.(isZeroer); !ok || !iz.isZero() {
+				var err error
+				h, err = sharedHeaders.Merge(rh)
+				if err != nil {
+					return nil, fmt.Errorf(`jwe.Decrypt: failed to merge recipient headers: %w`, err)
+				}
+			}
+		}
+		*mergedHeaders = h
+	}
+	h2 := *mergedHeaders
+	if _, custom := key.(KeyDecrypter); custom {
+		// A caller-supplied decrypter receives the mutable message/recipient.
+		// Its changes must be visible to subsequent attempts, including when
+		// the custom key is obtained by exporting a JWK.
+		*mergedHeaders = nil
+	}
+	ce, ok := h2.ContentEncryption()
 	if !ok {
 		return nil, decryptError{fmt.Errorf(`jwe.Decrypt: %w`, MissingContentEncryptionError{})}
 	}
-
-	// RFC 7516 §7.2.1 requires header parameter names to be disjoint
-	// across the protected, shared-unprotected, and per-recipient
-	// header locations. For "alg" specifically, allowing protected
-	// and per-recipient headers to declare conflicting values is an
-	// algorithm-confusion vector: an attacker who can rewrite the
-	// per-recipient (unprotected) location can claim a different alg
-	// than the integrity-protected one, and the alg-match loop below
-	// would silently break on whichever it sees first.
-	//
-	// Compact-form JWE legitimately has the same alg value in both
-	// places — parseCompact synthesizes a per-recipient header by
-	// cloning the protected header (minus enc), so a strict-disjoint
-	// check would reject every compact JWE. We therefore allow the
-	// duplication when the values agree, and reject only when they
-	// disagree. The shared unprotected header is ignored elsewhere
-	// in this function (see comment at the top) and so does not
-	// participate here either.
-	if rh := recipient.Headers(); rh != nil {
-		if recipAlg, recipHas := rh.Algorithm(); recipHas {
-			if protectedAlg, protectedHas := protectedHeaders.Algorithm(); protectedHas && protectedAlg != recipAlg {
-				return nil, decryptError{fmt.Errorf(`jwe.Decrypt: malformed JWE — "alg" header value differs between protected (%q) and per-recipient (%q) headers (RFC 7516 §7.2.1)`, protectedAlg, recipAlg)}
-			}
-		}
+	advertised, ok := h2.Algorithm()
+	if !ok {
+		return nil, fmt.Errorf(`jwe.Decrypt: failed to find "alg" header in JOSE header union`)
 	}
-
-	// The "alg" header can be in either protected or per-recipient
-	// headers. With disjointness enforced above, only one location can
-	// have it, so iteration order does not affect security; we keep
-	// per-recipient first to match the historical preference for
-	// recipient-specific algs in multi-recipient JWE.
-	var algMatched bool
-	for _, hdr := range []Headers{recipient.Headers(), protectedHeaders} {
-		v, ok := hdr.Algorithm()
-		if !ok {
-			continue
-		}
-
-		if v == alg {
-			algMatched = true
-			break
-		}
-		// if we found something but didn't match, it's a failure
-		return nil, decryptError{fmt.Errorf(`jwe.Decrypt: %w`, AlgorithmMismatchError{Expected: alg, Got: v})}
-	}
-	if !algMatched {
-		return nil, fmt.Errorf(`jwe.Decrypt: failed to find "alg" header in either protected or per-recipient headers`)
-	}
-
-	// Merge protected and per-recipient headers for algorithm-specific param extraction.
-	// When recipient headers are empty (common in compact format), skip the
-	// expensive Clone+Merge and use protected headers directly.
-	var h2 Headers
-	recipientHdrs := recipient.Headers()
-	if iz, ok := recipientHdrs.(isZeroer); ok && iz.isZero() {
-		h2 = protectedHeaders
-	} else {
-		var err error
-		h2, err = protectedHeaders.Clone()
-		if err != nil {
-			return nil, fmt.Errorf(`jwe.Decrypt: failed to copy headers (1): %w`, err)
-		}
-		h2, err = h2.Merge(recipientHdrs)
-		if err != nil {
-			return nil, fmt.Errorf(`jwe.Decrypt: failed to merge headers: %w`, err)
-		}
+	if advertised != alg {
+		return nil, decryptError{fmt.Errorf(`jwe.Decrypt: %w`, AlgorithmMismatchError{Expected: alg, Got: advertised})}
 	}
 
 	// Create content cipher (needed by RSA-1.5 for key size, and for content decryption)
@@ -782,7 +739,7 @@ func (dc *decryptContext) decryptContent(msg *Message, alg jwa.KeyEncryptionAlgo
 	// Read compression only from the protected header. The "zip" header in
 	// the unprotected/per-recipient header is not covered by the AEAD, so
 	// honoring it would let an attacker flip post-decryption decompression.
-	if v, ok := protectedHeaders.Compression(); ok && v == jwa.Deflate() {
+	if v, ok := msg.protectedHeaders.Compression(); ok && v == jwa.Deflate() {
 		buf, err := uncompress(plaintext, dc.maxDecompressBufferSize)
 		if err != nil {
 			return nil, fmt.Errorf(`jwe.Decrypt: failed to uncompress payload: %w`, err)

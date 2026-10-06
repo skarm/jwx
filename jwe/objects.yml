@@ -55,6 +55,7 @@ fields:
   - name: critical
     type: "[]string"
     json: crit
+    reject_null: true
   - name: ephemeralPublicKey
     type: jwk.Key
     direct_storage: true

@@ -2010,19 +2010,9 @@ func TestMaxRecipients(t *testing.T) {
 	})
 }
 
-// TestDecryptIgnoresUnprotectedHeader pins PR #1769 — per RFC 7516 §5.3
-// only the protected header is integrity-checked, so algorithm parameters
-// (alg, enc, epk, p2s, p2c, iv, tag) MUST be sourced from the
-// protected/per-recipient header. Before the fix jwe.Decrypt merged the
-// unprotected header into the protected copy, so a tampered JWE whose
-// unprotected header overrode the real alg with a valid-but-different
-// value would cause decryption to fail (the merged alg no longer matched
-// the key). After the fix the unprotected header is ignored and decrypt
-// succeeds, recovering the original plaintext.
-//
-// Tampering leaves `protected` byte-identical so that AAD/tag verification
-// is unaffected — this isolates the merge bug from incidental AEAD failures.
-func TestDecryptIgnoresUnprotectedHeader(t *testing.T) {
+// TestDecryptRejectsUnprotectedOverride rejects repeated alg parameters in
+// protected/shared-unprotected headers, even when the AEAD bytes are intact.
+func TestDecryptRejectsUnprotectedOverride(t *testing.T) {
 	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err, `rsa.GenerateKey should succeed`)
 
@@ -2041,26 +2031,16 @@ func TestDecryptIgnoresUnprotectedHeader(t *testing.T) {
 
 	var parsed map[string]any
 	require.NoError(t, json.Unmarshal(encrypted, &parsed), `freshly encrypted JWE should parse as JSON`)
-	// Use a valid-but-different registered algorithm. The real JWE was
-	// encrypted with RSA-OAEP; claim RSA1_5 in the unprotected header.
-	// Under the buggy merge this would clobber the real alg and
-	// decryptContent's algMatched loop would reject the mismatch. The
-	// fix ignores the unprotected header, so decrypt still succeeds.
-	parsed["unprotected"] = map[string]any{
-		"alg": jwa.RSA1_5().String(),
-	}
-	// Flattened JSON mirrors alg into a top-level per-recipient "header".
-	// Decrypt's alg-match loop checks recipient.Headers() first — if that
-	// still carries alg=RSA-OAEP the merged protected-header path never
-	// runs. Strip it so the alg lookup must reach the protected header.
+	// Inject a registered alg without changing authenticated bytes.
+	parsed["unprotected"] = map[string]any{"alg": jwa.RSA1_5().String()}
 	delete(parsed, "header")
 
 	tampered, err := json.Marshal(parsed)
 	require.NoError(t, err, `re-marshaling tampered JWE should succeed`)
 
-	decrypted, err = jwe.Decrypt(tampered, jwe.WithKey(jwa.RSA_OAEP(), privkey))
-	require.NoError(t, err, `jwe.Decrypt must ignore unprotected-header overrides`)
-	require.Equal(t, []byte(payload), decrypted, `plaintext should still round-trip through the tampered JWE`)
+	_, err = jwe.Decrypt(tampered, jwe.WithKey(jwa.RSA_OAEP(), privkey))
+	require.ErrorContains(t, err, `header parameter "alg" occurs in multiple JOSE header locations`)
+
 }
 
 // TestDecryptRejectsAlgConflictBetweenProtectedAndPerRecipient pins
@@ -2073,10 +2053,8 @@ func TestDecryptIgnoresUnprotectedHeader(t *testing.T) {
 // header says something else. Decrypt must reject the message rather
 // than pick a winner.
 //
-// Compact JWE legitimately carries the same alg in both locations
-// (parseCompact synthesizes the per-recipient header by cloning
-// protected), so the check is "values must agree if both are present"
-// rather than strict disjointness — see TestDecryptCompactStillWorks.
+// Compact parsing copies protected values into a synthetic recipient only
+// in memory. Those convenience values are excluded from JSON serialization.
 func TestDecryptRejectsAlgConflictBetweenProtectedAndPerRecipient(t *testing.T) {
 	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err, `rsa.GenerateKey should succeed`)
@@ -2116,7 +2094,7 @@ func TestDecryptRejectsAlgConflictBetweenProtectedAndPerRecipient(t *testing.T) 
 	_, err = jwe.Decrypt(tampered, jwe.WithKey(jwa.RSA_OAEP(), privkey))
 	require.Error(t, err, `Decrypt must reject a JWE whose alg differs between protected and per-recipient headers`)
 	require.ErrorIs(t, err, jwe.DecryptError())
-	require.Contains(t, err.Error(), "differs between protected", `error should name the conflict`)
+	require.Contains(t, err.Error(), "multiple JOSE header locations", `error should name the conflict`)
 }
 
 // TestDecryptKeySetSourcesAlgFromProtectedHeader pins that
@@ -2228,10 +2206,8 @@ func TestDecryptSubstepTypedErrors(t *testing.T) {
 		var parsed map[string]any
 		require.NoError(t, json.Unmarshal(encrypted, &parsed), `freshly encrypted JWE should parse as JSON`)
 
-		// Rewrite both the protected and per-recipient alg consistently
-		// to the same different value. Disjointness is preserved
-		// (values agree); the mismatch fires against the caller's
-		// WithKey choice.
+		// Change the sole protected alg so structure remains valid while
+		// its value conflicts with the caller's pinned algorithm.
 		protectedRaw, err := base64.RawURLEncoding.DecodeString(parsed["protected"].(string))
 		require.NoError(t, err)
 		var protectedMap map[string]any
@@ -2240,9 +2216,7 @@ func TestDecryptSubstepTypedErrors(t *testing.T) {
 		newProtected, err := json.Marshal(protectedMap)
 		require.NoError(t, err)
 		parsed["protected"] = base64.RawURLEncoding.EncodeToString(newProtected)
-		parsed["header"] = map[string]any{
-			"alg": jwa.RSA1_5().String(),
-		}
+		delete(parsed, "header")
 
 		tampered, err := json.Marshal(parsed)
 		require.NoError(t, err, `re-marshaling tampered JWE should succeed`)

@@ -140,8 +140,8 @@ func makeParseError(prefix string, f string, args ...any) error {
 //-------------------------------------------------------------------
 
 // MissingContentEncryptionError is returned when jwe.Decrypt cannot
-// locate the content encryption algorithm ("enc") in the protected
-// headers of the JWE message.
+// locate the content encryption algorithm ("enc") in the JOSE header
+// union of the JWE message.
 //
 // Use errors.Is with a zero-value MissingContentEncryptionError{} to
 // detect this failure mode programmatically:
@@ -150,7 +150,7 @@ func makeParseError(prefix string, f string, args ...any) error {
 type MissingContentEncryptionError struct{}
 
 func (MissingContentEncryptionError) Error() string {
-	return `failed to retrieve content encryption algorithm from protected headers`
+	return `failed to retrieve content encryption algorithm from JOSE header union`
 }
 
 func (MissingContentEncryptionError) Is(target error) bool {

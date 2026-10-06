@@ -58,6 +58,11 @@ options:
 
 Manual option functions in `{pkg}/options.go` supplement generated ones.
 
+Object fields can set `reject_null: true` to reject an explicit JSON null before
+typed decoding. JWE uses this for `crit`, whose nil-slice representation would
+otherwise erase the presence of the member. Other fields retain their existing
+decoding policy unless the flag is set.
+
 ## Key Registration/Extension Points
 
 | What | Registration Function | Package |
@@ -212,3 +217,5 @@ Do not re-flag this as a UX or security finding (adversarial review JWA-20260426
 Examples and benchmarks are external companion repos (`github.com/jwx-go/examples`, `github.com/jwx-go/benchmarks`), locally available via `go.work` when checked out.
 
 No `go.work` file is committed. Nested modules use `replace` directives for local development.
+
+JWE JSON decryption preserves the transmitted protected segment for AEAD AAD, including an empty prefix when protected is omitted. Header disjointness and equal effective `enc` values across recipients are checked before key selection and before constructing a synthetic recipient for headerless JSON. Synthetic fields copied from protected have a separate header snapshot and are excluded from JSON serialization; explicitly added recipient fields are retained. Altering or removing protected fields does not change that snapshot. Altering a copied field through the recipient is rejected during serialization. Recipient unions are reused within one provider's builtin key batch; a new provider starts a new batch, and a custom KeyDecrypter (including an exported JWK key) invalidates the union before callback invocation.

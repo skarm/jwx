@@ -239,6 +239,10 @@ plain, err := jwe.Decrypt(enc, jwe.WithKey(jwa.RSA_OAEP_256(), recipientPrivateK
 
 `jwe.WithKey(alg, key)` is the same on both encrypt and decrypt sides — this symmetry is intentional.
 
+JSON JWE headers may distribute `alg`, `enc`, and algorithm parameters across protected, shared unprotected,
+and per-recipient headers, but parameter names must be disjoint. All recipients must use the same `enc`.
+Only protected parameters are authenticated; `crit` and `zip` must be protected, and `crit: null` is rejected.
+
 ## Companion modules
 
 Beyond the core `github.com/lestrrat-go/jwx/v4` module, the project ships companion modules under `github.com/jwx-go`. The agent should know **what's available and when to reach for each one** — depth lives in each module's godoc.
