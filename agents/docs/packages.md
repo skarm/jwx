@@ -162,3 +162,5 @@ Shared utilities. Not public API.
 | `jwxtest` | Test key generation helpers (RSA, ECDSA, Ed25519, symmetric) |
 | `tokens` | String constants for algorithm names and separators |
 | `pool` | Generic object pool (`Pool[T]`, `SlicePool[T]`) |
+
+Built-in JWS HS256/HS384/HS512 require at least 32/48/64-byte keys; RS*/PS* require an RSA modulus of at least 2048 bits, including raw keys, JWKs, crypto.Signer, JWT fast paths and streaming detached operations. These algorithm-specific floors apply independently of optional JWK ValidateKey checks. Low-level SignHMAC/SignRSA primitives remain caller-controlled building blocks.

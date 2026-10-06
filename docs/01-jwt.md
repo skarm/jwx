@@ -1364,7 +1364,7 @@ func Example_jwt_serialize_jws() {
     return
   }
 
-  rawKey := []byte(`abracadabra`)
+  rawKey := []byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`)
   jwkKey, err := jwk.Import[jwk.Key](rawKey)
   if err != nil {
     fmt.Printf("failed to create symmetric key: %s\n", err)
@@ -1397,7 +1397,7 @@ func Example_jwt_serialize_jws() {
 source: [examples/jwt_serialize_jws_example_test.go](https://github.com/jwx-go/examples/blob/v4/jwt_serialize_jws_example_test.go)
 <!-- END INCLUDE -->
 
-> Warning: the symmetric literals in these examples are deliberately short for readability. Production `HS*` keys should be random secrets that meet the minimum sizes described in [the JWK docs](04-jwk.md).
+> The fixed symmetric literals are for reproducible examples. Production `HS*` keys must be cryptographically random and meet the minimum sizes described in [the JWK docs](04-jwk.md).
 
 ## Serialize using JWE and JWS
 
@@ -1444,7 +1444,7 @@ func Example_jwt_serialize_jwe_jws() {
     return
   }
 
-  signkey, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  signkey, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create symmetric key: %s\n", err)
     return
@@ -1609,7 +1609,7 @@ func Example_jwt_plain_struct() {
     fmt.Fprintf(os.Stderr, "failed to build JWT: %s\n", err)
   }
 
-  key := []byte("secret")
+  key := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
   signed, err := jwt.Sign(t1, jwt.WithKey(jwa.HS256(), key))
   if err != nil {
     fmt.Printf("failed to sign JWT: %s\n", err)
@@ -1746,4 +1746,4 @@ func Example_jwt_sign_with_custom_base64_encoder() {
 source: [examples/jwt_sign_with_custom_base64_example_test.go](https://github.com/jwx-go/examples/blob/v4/jwt_sign_with_custom_base64_example_test.go)
 <!-- END INCLUDE -->
 
-You can use these option for `jws.Sign` and `jws.Verify` as well. See the [JWS docs for an example](./02-jwt.md#using-a-custom-base64-encoder).
+You can use these option for `jws.Sign` and `jws.Verify` as well. See the [JWS docs for an example](./02-jws.md#using-a-custom-base64-encoder).

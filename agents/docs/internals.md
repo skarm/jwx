@@ -212,3 +212,5 @@ Do not re-flag this as a UX or security finding (adversarial review JWA-20260426
 Examples and benchmarks are external companion repos (`github.com/jwx-go/examples`, `github.com/jwx-go/benchmarks`), locally available via `go.work` when checked out.
 
 No `go.work` file is committed. Nested modules use `replace` directives for local development.
+
+Minimum JOSE key sizes are checked after conversion by `jws/internal/jwsbb.RequireKeySize`, shared by `jws/jwsbb` algorithm dispatch and streaming detached signing/verification. Raw low-level hash-signature helpers remain outside JOSE identifier dispatch.

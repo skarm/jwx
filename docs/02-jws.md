@@ -133,7 +133,7 @@ import (
 )
 
 func Example_jws_use_jws_header() {
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf(`failed to create new symmetric key: %s`, err)
     return
@@ -198,7 +198,7 @@ import (
 )
 
 func Example_jws_sign() {
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create key: %s\n", err)
     return
@@ -217,7 +217,7 @@ func Example_jws_sign() {
 source: [examples/jws_sign_example_test.go](https://github.com/jwx-go/examples/blob/v4/jws_sign_example_test.go)
 <!-- END INCLUDE -->
 
-> Warning: the symmetric literals in the examples are deliberately short for readability. Production `HS*` keys should be random secrets that meet the minimum sizes described in [the JWK docs](04-jwk.md).
+> The fixed symmetric literals are for reproducible examples. Production `HS*` keys must be cryptographically random and meet the minimum sizes described in [the JWK docs](04-jwk.md).
 
 For normal JWS code, prefer passing a concrete `jwa.SignatureAlgorithm` constant such as
 `jwa.HS256()` or `jwa.RS256()` to `jws.WithKey()`. The option accepts `jwa.KeyAlgorithm`
@@ -247,7 +247,7 @@ func Example_jws_sign_json() {
   var keys []jwk.Key
 
   for i := 0; i < 3; i++ {
-    key, err := jwk.Import[jwk.Key]([]byte(fmt.Sprintf(`abracadabra-%d`, i)))
+    key, err := jwk.Import[jwk.Key]([]byte(fmt.Sprintf(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-%d`, i)))
     if err != nil {
       fmt.Printf("failed to create key: %s\n", err)
       return
@@ -293,7 +293,7 @@ import (
 func Example_jws_sign_detached_payload() {
   payload := `$.02`
 
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create symmetric key: %s\n", err)
     return
@@ -342,7 +342,7 @@ import (
 )
 
 func Example_jws_sign_with_headers() {
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create key: %s\n", err)
     return
@@ -399,7 +399,7 @@ import (
 func Example_jws_verify_with_key() {
   const src = `eyJhbGciOiJIUzI1NiJ9.TG9yZW0gaXBzdW0.EjVtju0uXjSz6QevNgAqN1ESd9aNCP7-tJLifkQ0_C0`
 
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create key: %s\n", err)
     return
@@ -436,7 +436,7 @@ when strict ECDSA verification is required.
 
 To verify a payload using JWKS, by default you will need your payload and JWKS to have matching `kid` and `alg` fields.
 
-First the `alg` field's requirement is the same for using a single key. But you could, at a possible cost of trying multiple algorithms, let this module infer the algorithm to use by using the `jws.InferAlgorithmFromKey(true)` sub-option to `jws.WithKeySet()` (or `jwt.WithKeySet()`) See the example below for details.
+First the `alg` field's requirement is the same for using a single key. But you could, at a possible cost of trying multiple algorithms, let this module infer the algorithm to use by using the `jws.WithInferAlgorithmFromKey(true)` sub-option to `jws.WithKeySet()` (or `jwt.WithKeySet()`) See the example below for details.
 
 (ref: "[Why don't you automatically infer the algorithm for `jws.Verify`?](99-faq.md#why-dont-you-automatically-infer-the-algorithm-for-jwsverify-)").
 
@@ -477,7 +477,7 @@ func Example_jws_verify_with_jwk_set() {
   // Create a JWK Set
   set := jwk.NewSet()
   // Add some bogus keys
-  k1, _ := jwk.Import[jwk.Key]([]byte("abracadabra"))
+  k1, _ := jwk.Import[jwk.Key]([]byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
   _ = set.AddKey(k1)
   _ = k1.Set(jwk.KeyIDKey, "key-01")
 
@@ -595,7 +595,7 @@ func Example_jws_verify_detached_payload() {
   serialized := `eyJhbGciOiJIUzI1NiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19..lnRw_MSpQjARa5LWqPcu8Qls9p3wYGrC6tz4-nr0rkA`
   payload := `$.02`
 
-  key, err := jwk.Import[jwk.Key]([]byte(`abracadabra`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create symmetric key: %s\n", err)
     return
@@ -856,7 +856,7 @@ import (
 )
 
 func Example_jws_header_filter_basic() {
-  key, err := jwk.Import[jwk.Key]([]byte(`my-secret-key`))
+  key, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`))
   if err != nil {
     fmt.Printf("failed to create key: %s\n", err)
     return
@@ -936,13 +936,13 @@ import (
 
 func Example_jws_header_filter_advanced() {
   // Create keys for multi-signature JWS
-  key1, err := jwk.Import[jwk.Key]([]byte(`secret-key-1`))
+  key1, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef1`))
   if err != nil {
     fmt.Printf("failed to create key1: %s\n", err)
     return
   }
 
-  key2, err := jwk.Import[jwk.Key]([]byte(`secret-key-2`))
+  key2, err := jwk.Import[jwk.Key]([]byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef2`))
   if err != nil {
     fmt.Printf("failed to create key2: %s\n", err)
     return
@@ -1047,3 +1047,7 @@ func validateJWSSecurityHeaders(headers jws.Headers) {
 ```
 source: [examples/jws_filter_advanced_example_test.go](https://github.com/jwx-go/examples/blob/v4/jws_filter_advanced_example_test.go)
 <!-- END INCLUDE -->
+
+## Minimum signature key sizes
+
+Built-in HS256, HS384 and HS512 reject keys shorter than 32, 48 and 64 bytes respectively. Built-in RS256/RS384/RS512 and PS256/PS384/PS512 reject RSA moduli shorter than 2048 bits. These RFC 7518 requirements apply to signing and verification, raw keys and JWKs, opaque RSA crypto.Signer keys, JWT fast paths and streaming detached JWS. They are enforced independently of WithValidateKey. Existing callers using undersized keys must rotate their keys before upgrading. Generate symmetric keys with crypto/rand; padding a weak secret does not create entropy.

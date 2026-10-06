@@ -116,6 +116,10 @@ func (sc *signContext) signStreaming() ([]byte, error) {
 			return nil, makeSignError(prefixJwsSign, `failed to convert key for signature %d: %w`, idx, err)
 		}
 
+		if err := jwsbbi.RequireKeySize(alg.String(), rawKey); err != nil {
+			return nil, makeSignError(prefixJwsSign, `signature %d: %w`, idx, err)
+		}
+
 		// The non-streaming path runs the same check from
 		// signatureBuilder.Build, which this path does not go through.
 		if sc.strictECDSA && dsigInfo.Family == dsig.ECDSA {
@@ -320,6 +324,9 @@ func (vc *verifyContext) verifyStreaming(buf []byte) ([]byte, error) {
 	rawKey, err := convertStreamingVerifyKey(key, dsigInfo.Family)
 	if err != nil {
 		return nil, makeVerifyError(`failed to convert key: %w`, err)
+	}
+	if err := jwsbbi.RequireKeySize(alg.String(), rawKey); err != nil {
+		return nil, makeVerifyError(`%w`, verificationError{err})
 	}
 	if vc.strictECDSA && dsigInfo.Family == dsig.ECDSA {
 		if err := jwsbbi.RequireECDSACurve(alg.String(), dsigInfo.Name, rawKey); err != nil {

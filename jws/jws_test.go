@@ -9,13 +9,16 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/asn1"
+	stdbase64 "encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"maps"
 	"math/big"
@@ -29,7 +32,6 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/dsig"
-
 	"github.com/lestrrat-go/jwx/v4/internal/base64"
 	"github.com/lestrrat-go/jwx/v4/internal/json"
 	"github.com/lestrrat-go/jwx/v4/internal/jwxtest"
@@ -38,6 +40,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jws/jwsbb"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -403,7 +406,7 @@ func TestRoundtrip(t *testing.T) {
 
 	t.Run("HMAC", func(t *testing.T) {
 		t.Parallel()
-		sharedkey := []byte("Avracadabra")
+		sharedkey := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 		jwkKey, _ := jwk.Import[jwk.Key](sharedkey)
 		keys := map[string]any{
 			"[]byte":  sharedkey,
@@ -554,7 +557,7 @@ func TestRFC9864CrossAlgorithmVerify(t *testing.T) {
 }
 
 func TestSignMulti2(t *testing.T) {
-	sharedkey := []byte("Avracadabra")
+	sharedkey := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	payload := []byte("Lorem ipsum")
 	hmacAlgorithms := []jwa.SignatureAlgorithm{jwa.HS256(), jwa.HS384(), jwa.HS512()}
 	options := make([]jws.SignOption, 0, 1+len(hmacAlgorithms))
@@ -823,7 +826,7 @@ func TestVerifySet(t *testing.T) {
 
 	makeSet := func(privkey jwk.Key) jwk.Set {
 		set := jwk.NewSet()
-		k1, err := jwk.Import[jwk.Key]([]byte("abracadabra"))
+		k1, err := jwk.Import[jwk.Key]([]byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 		require.NoError(t, err, `jwk.Import should succeed`)
 		set.AddKey(k1)
 		k2, err := jwk.Import[jwk.Key]([]byte("opensesame"))
@@ -1179,19 +1182,19 @@ func TestRFC7797(t *testing.T) {
 func TestGH485(t *testing.T) {
 	const payload = `eyJhIjoiYiJ9`
 	const protected = `eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiIsImNyaXQiOlsiZXhwIl0sImV4cCI6MCwiaXNzIjoiZm9vIiwibmJmIjowLCJpYXQiOjB9`
-	const signature = `qM0CdRcyR4hw03J2ThJDat3Af40U87wVCF3Tp3xsyOg`
+	const signature = `269mjyPktJ6clZ1mbA9qL0Tmxqg-AUp59tITEgfiOhY`
 	const expected = `{"a":"b"}`
 	signed := fmt.Sprintf(`{
     "payload": %q,
     "signatures": [{"protected": %q, "signature": %q}]
 }`, payload, protected, signature)
 
-	verified, err := jws.Verify([]byte(signed), jws.WithKey(jwa.HS256(), []byte("secret")), jws.WithCritExtension("exp"))
+	verified, err := jws.Verify([]byte(signed), jws.WithKey(jwa.HS256(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")), jws.WithCritExtension("exp"))
 	require.NoError(t, err, `jws.Verify should succeed`)
 	require.Equal(t, expected, string(verified), `verified payload should match`)
 
 	compact := strings.Join([]string{protected, payload, signature}, ".")
-	verified, err = jws.Verify([]byte(compact), jws.WithKey(jwa.HS256(), []byte("secret")), jws.WithCritExtension("exp"))
+	verified, err = jws.Verify([]byte(compact), jws.WithKey(jwa.HS256(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")), jws.WithCritExtension("exp"))
 	require.NoError(t, err, `jws.Verify should succeed`)
 	require.Equal(t, expected, string(verified), `verified payload should match`)
 }
@@ -1681,11 +1684,11 @@ func TestGH840(t *testing.T) {
 func TestGH888(t *testing.T) {
 	// This should fail because we're passing multiple keys (i.e. multiple signatures)
 	// and yet we haven't specified JSON serialization
-	_, err := jws.Sign([]byte(`foo`), jws.WithInsecureNoSignature(), jws.WithKey(jwa.HS256(), []byte(`bar`)))
+	_, err := jws.Sign([]byte(`foo`), jws.WithInsecureNoSignature(), jws.WithKey(jwa.HS256(), []byte(`0123456789abcdef0123456789abcdef`)))
 	require.Error(t, err, `jws.Sign with multiple keys (including alg=none) should fail`)
 
 	// This should pass because we can now have multiple signatures with JSON serialization
-	signed, err := jws.Sign([]byte(`foo`), jws.WithInsecureNoSignature(), jws.WithKey(jwa.HS256(), []byte(`bar`)), jws.WithJSON())
+	signed, err := jws.Sign([]byte(`foo`), jws.WithInsecureNoSignature(), jws.WithKey(jwa.HS256(), []byte(`0123456789abcdef0123456789abcdef`)), jws.WithJSON())
 	require.NoError(t, err, `jws.Sign should succeed`)
 
 	message, err := jws.Parse(signed)
@@ -1711,7 +1714,7 @@ func TestGH888(t *testing.T) {
 
 	// Note: you can't do jws.Verify(..., jws.WithInsecureNoSignature())
 
-	verified, err := jws.Verify(signed, jws.WithKey(jwa.HS256(), []byte(`bar`)))
+	verified, err := jws.Verify(signed, jws.WithKey(jwa.HS256(), []byte(`0123456789abcdef0123456789abcdef`)))
 	require.NoError(t, err, `jws.Verify should succeed`)
 	require.Equal(t, []byte(`foo`), verified)
 }
@@ -2614,7 +2617,7 @@ func TestStrictECDSALeavesOtherFamiliesAlone(t *testing.T) {
 
 	t.Run("HMAC", func(t *testing.T) {
 		t.Parallel()
-		_, err := jws.Sign(payload, jws.WithKey(jwa.HS256(), []byte(`abracadabra`)), jws.WithStrictECDSA(true))
+		_, err := jws.Sign(payload, jws.WithKey(jwa.HS256(), []byte(`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`)), jws.WithStrictECDSA(true))
 		require.NoError(t, err, `jws.Sign should succeed`)
 	})
 
@@ -2707,4 +2710,164 @@ func TestVerifyKeepsPermissiveECDSAInference(t *testing.T) {
 		require.NoError(t, err, `jws.Verify should accept the inferred (ES384, P-256 key) pair`)
 		require.Equal(t, payload, verified)
 	})
+}
+
+type opaqueRSAKey struct{ key *rsa.PrivateKey }
+
+func (k opaqueRSAKey) Public() crypto.PublicKey { return &k.key.PublicKey }
+func (k opaqueRSAKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	return k.key.Sign(r, digest, opts)
+}
+
+func TestHMACMinimumKeySize(t *testing.T) {
+	for _, c := range []struct {
+		alg  jwa.SignatureAlgorithm
+		size int
+		hash func() hash.Hash
+	}{
+		{jwa.HS256(), 32, sha256.New}, {jwa.HS384(), 48, sha512.New384}, {jwa.HS512(), 64, sha512.New},
+	} {
+		for _, size := range []int{1, c.size - 1, c.size, c.size + 1} {
+			for _, asJWK := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/size=%d/jwk=%v", c.alg, size, asJWK), func(t *testing.T) {
+					raw := bytes.Repeat([]byte{42}, size)
+					var key any = raw
+					jk, err := jwk.Import[jwk.Key](raw)
+					require.NoError(t, err)
+					require.NoError(t, jk.Set(jwk.AlgorithmKey, c.alg))
+					if asJWK {
+						key = jk
+					}
+					_, err = jws.Sign([]byte("payload"), jws.WithKey(c.alg, key))
+					if size < c.size {
+						require.ErrorContains(t, err, "at least")
+					} else {
+						require.NoError(t, err)
+					}
+					_, err = jws.Sign(nil, jws.WithKey(c.alg, key), jws.WithDetachedPayloadReader(strings.NewReader("payload")))
+					if size < c.size {
+						require.ErrorContains(t, err, "at least")
+					} else {
+						require.NoError(t, err)
+					}
+					hdr := stdbase64.RawURLEncoding.EncodeToString([]byte(`{"alg":"` + c.alg.String() + `"}`))
+					pl := stdbase64.RawURLEncoding.EncodeToString([]byte(`{"sub":"alice"}`))
+					input := hdr + "." + pl
+					mac := hmac.New(c.hash, raw)
+					_, err = mac.Write([]byte(input))
+					require.NoError(t, err)
+					wire := []byte(input + "." + stdbase64.RawURLEncoding.EncodeToString(mac.Sum(nil)))
+					set := jwk.NewSet()
+					require.NoError(t, set.AddKey(jk))
+					for _, opts := range [][]jws.VerifyOption{{jws.WithKey(c.alg, key)}, {jws.WithKeySet(set, jws.WithUseDefault(true))}} {
+						_, err = jws.Verify(wire, opts...)
+						if size < c.size {
+							require.ErrorContains(t, err, "at least")
+						} else {
+							require.NoError(t, err)
+						}
+					}
+					_, err = jws.VerifyCompactFast(key, wire, c.alg)
+					if size < c.size {
+						require.ErrorContains(t, err, "at least")
+					} else {
+						require.NoError(t, err)
+					}
+					for _, opts := range [][]jwt.ParseOption{{jwt.WithKey(c.alg, key), jwt.WithValidate(false)}, {jwt.WithKey(c.alg, key), jwt.WithVerifyOption(jws.WithCritValidation(false)), jwt.WithValidate(false)}} {
+						_, err = jwt.Parse(wire, opts...)
+						if size < c.size {
+							require.ErrorContains(t, err, "at least")
+						} else {
+							require.NoError(t, err)
+						}
+					}
+					detached := []byte(hdr + ".." + stdbase64.RawURLEncoding.EncodeToString(mac.Sum(nil)))
+					_, err = jws.Verify(detached, jws.WithKey(c.alg, key), jws.WithDetachedPayloadReader(strings.NewReader(`{"sub":"alice"}`)))
+					if size < c.size {
+						require.ErrorContains(t, err, "at least")
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestRSAMinimumKeySize(t *testing.T) {
+	small, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	valid, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	for _, raw := range []*rsa.PrivateKey{small, valid} {
+		for _, alg := range []jwa.SignatureAlgorithm{jwa.RS256(), jwa.RS384(), jwa.RS512(), jwa.PS256(), jwa.PS384(), jwa.PS512()} {
+			t.Run(fmt.Sprintf("%s/%d", alg, raw.N.BitLen()), func(t *testing.T) {
+				for _, key := range []any{raw, *raw, opaqueRSAKey{raw}} {
+					_, err := jws.Sign([]byte("payload"), jws.WithKey(alg, key))
+					if raw == small {
+						require.ErrorContains(t, err, "2048 bits")
+					} else {
+						require.NoError(t, err)
+					}
+					_, err = jws.Sign(nil, jws.WithKey(alg, key), jws.WithDetachedPayloadReader(strings.NewReader("payload")))
+					if raw == small {
+						require.ErrorContains(t, err, "2048 bits")
+					} else if _, isValue := key.(rsa.PrivateKey); isValue {
+						// The streaming primitive supports pointer and opaque signer keys.
+						require.ErrorContains(t, err, "invalid key type")
+					} else {
+						require.NoError(t, err)
+					}
+				}
+				if raw == small {
+					// Use the low-level primitive to supply a cryptographically valid,
+					// nonconforming signature; verification must reject the key floor.
+					hdr := stdbase64.RawURLEncoding.EncodeToString([]byte(`{"alg":"` + alg.String() + `"}`))
+					pl := stdbase64.RawURLEncoding.EncodeToString([]byte(`{"sub":"alice"}`))
+					input := hdr + "." + pl
+					var sig []byte
+					var err error
+					h := crypto.SHA256
+					if strings.HasSuffix(alg.String(), "384") {
+						h = crypto.SHA384
+					}
+					if strings.HasSuffix(alg.String(), "512") {
+						h = crypto.SHA512
+					}
+					if strings.HasPrefix(alg.String(), "PS") {
+						sig, err = jwsbb.SignRSA(raw, []byte(input), h, true, rand.Reader)
+					} else {
+						sig, err = jwsbb.SignRSA(raw, []byte(input), h, false, rand.Reader)
+					}
+					// PS512 needs a larger modulus even at the raw primitive layer.
+					if err != nil {
+						require.Equal(t, jwa.PS512(), alg)
+						return
+					}
+					wire := []byte(input + "." + stdbase64.RawURLEncoding.EncodeToString(sig))
+					for _, key := range []any{&raw.PublicKey, raw.PublicKey, raw, opaqueRSAKey{raw}} {
+						_, err = jws.Verify(wire, jws.WithKey(alg, key))
+						require.ErrorContains(t, err, "2048 bits")
+						_, err = jws.VerifyCompactFast(key, wire, alg)
+						require.ErrorContains(t, err, "2048 bits")
+						_, err = jwt.Parse(wire, jwt.WithKey(alg, key), jwt.WithValidate(false))
+						require.ErrorContains(t, err, "2048 bits")
+						detached := []byte(hdr + ".." + stdbase64.RawURLEncoding.EncodeToString(sig))
+						_, err = jws.Verify(detached, jws.WithKey(alg, key), jws.WithDetachedPayloadReader(strings.NewReader(`{"sub":"alice"}`)))
+						require.ErrorContains(t, err, "2048 bits")
+					}
+				} else {
+					wire, err := jws.Sign([]byte("payload"), jws.WithKey(alg, raw))
+					require.NoError(t, err)
+					jk, err := jwk.Import[jwk.Key](raw)
+					require.NoError(t, err)
+					for _, key := range []any{&raw.PublicKey, jk, opaqueRSAKey{raw}} {
+						got, err := jws.Verify(wire, jws.WithKey(alg, key))
+						require.NoError(t, err)
+						require.Equal(t, []byte("payload"), got)
+					}
+				}
+			})
+		}
+	}
 }

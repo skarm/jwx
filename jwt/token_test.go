@@ -271,7 +271,7 @@ func TestUnmarshalResetsPrivateClaims(t *testing.T) {
 	})
 	t.Run("Parse with WithToken", func(t *testing.T) {
 		t.Parallel()
-		key := []byte("0123456789abcdef")
+		key := []byte("0123456789abcdef0123456789abcdef")
 
 		t1 := jwt.New()
 		require.NoError(t, t1.Set("role", "admin"))

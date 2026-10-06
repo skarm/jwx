@@ -22,7 +22,7 @@ import (
 func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 	t.Run("Algorithm confusion with single WithKey option", func(t *testing.T) {
 		// Create a JWT signed with HS256 (symmetric key)
-		secret := []byte("secret-key-for-hmac")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 		token := jwt.New()
 		require.NoError(t, token.Set(jwt.IssuerKey, "test"), `token.Set should succeed`)
 		require.NoError(t, token.Set(jwt.SubjectKey, "user123"), `token.Set should succeed`)
@@ -47,7 +47,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 	})
 
 	t.Run("Header tampering detection", func(t *testing.T) {
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 		token := jwt.New()
 		require.NoError(t, token.Set(jwt.IssuerKey, "test"), `token.Set should succeed`)
 
@@ -83,7 +83,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 	})
 
 	t.Run("Critical header bypass", func(t *testing.T) {
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 		// Create a JWT with critical header that requires special handling
 		token := jwt.New()
@@ -157,7 +157,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 
 	t.Run("Fast path vs slow path consistency", func(t *testing.T) {
 		// Ensure that both fast path and slow path give the same results for edge cases
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 		token := jwt.New()
 		require.NoError(t, token.Set(jwt.IssuerKey, "test"), `token.Set should succeed`)
 		require.NoError(t, token.Set(jwt.ExpirationKey, time.Now().Add(-time.Hour)), `token.Set should succeed`)
@@ -186,7 +186,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 	})
 
 	t.Run("Malformed JWT handling", func(t *testing.T) {
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 		// Test various malformed JWTs to ensure fast path doesn't bypass format validation
 		malformedJWTs := []string{
@@ -207,7 +207,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 
 	t.Run("None algorithm bypass", func(t *testing.T) {
 		// Test that "alg": "none" cannot be exploited through the fast path
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 		// Create a legitimate JWT first
 		token := jwt.New()
@@ -247,7 +247,7 @@ func TestVerifyCompactFastSecurityBypass(t *testing.T) {
 	t.Run("Fast path detection", func(t *testing.T) {
 		// This test attempts to verify that the fast path is actually being used
 		// under the specific conditions we're testing
-		secret := []byte("test-secret")
+		secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 		token := jwt.New()
 		require.NoError(t, token.Set(jwt.IssuerKey, "test"), `token.Set should succeed`)
 

@@ -57,7 +57,7 @@ Sub-package map:
    one key, use `jwt.WithKeySet(set, jws.WithUseDefault(true))`. Use `jws.WithRequireKid(false)` only when verification
    must consider multiple keys without matching `kid` values.
 6. **`jku` (key URL in the JWS header) is attacker-controlled.** Use `jwt.WithVerifyAuto` only with a `jwkfetch.Client` configured with a `jwkfetch.NewMapWhitelist()` of allowed URLs.
-7. **HMAC keys are `[]byte`, not `string`.** Pass `[]byte("secret")`, or better, a `jwk.Key` imported from those bytes.
+7. **HMAC keys are `[]byte`, not `string`.** Use cryptographically random keys of at least 32 bytes for HS256, 48 for HS384, or 64 for HS512, or a `jwk.Key` imported from those bytes. RSA RS*/PS* require a modulus of at least 2048 bits. Signing and verification reject shorter keys by default.
 8. **`jwk.Import` and `jwk.Export` require explicit type parameters.** `jwk.Import[jwk.Key](raw)`, `jwk.Export[*rsa.PublicKey](key)`. Their type argument is not inferable from the call, so bare `jwk.Import(raw)` does **not** compile.
 9. **`jwk.ParseKey` is not generic.** `jwk.ParseKey(data)` returns `(jwk.Key, error)`. Use `jwk.ParseKeyAs[jwk.RSAPublicKey](data)` when a concrete JWK type is required.
 

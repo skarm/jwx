@@ -59,3 +59,5 @@ Leaf Packages (no internal deps)
 | `lestrrat-go/dsig` | jws, jws/jwsbb | Digital signature primitives (HMAC, RSA, ECDSA, EdDSA, and ML-DSA on Go 1.27). v1.4.0 or later is required, since it owns the ML-DSA algorithms and the `dsig.MLDSAFamily` family. |
 | `lestrrat-go/option/v3` | all packages | Functional options pattern |
 | `golang.org/x/crypto` | jwe | Extended crypto (PBKDF2, etc.) |
+
+`jws/jwsbb` → `jws/internal/jwsbb`: shared minimum HMAC/RSA size validation; streaming detached paths call the same checker after key conversion.

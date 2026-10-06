@@ -69,6 +69,7 @@ go_test(
     ],
     embed = [":jws"],
     deps = [
+        "//jwt",
         "//cert",
         "//internal/base64",
         "//internal/json",

@@ -343,7 +343,7 @@ func TestJWTParseVerify(t *testing.T) {
 
 	keys := make([]any, 0, 6)
 
-	keys = append(keys, []byte("abracadabra"))
+	keys = append(keys, []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 
 	rsaPrivKey, err := jwxtest.GenerateRsaKey()
 	require.NoError(t, err, "RSA key generated")
@@ -1679,7 +1679,7 @@ func TestGH430(t *testing.T) {
 	})
 	require.NoError(t, err, `t1.Set should succeed`)
 
-	key := []byte("secret")
+	key := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	signed, err := jwt.Sign(t1, jwt.WithKey(jwa.HS256(), key))
 	require.NoError(t, err, `jwt.Sign should succeed`)
 
@@ -1899,25 +1899,25 @@ func TestEqualNilTimesAndMarshalErrors(t *testing.T) {
 func TestSerializer(t *testing.T) {
 	t.Run(`Invalid sign suboption`, func(t *testing.T) {
 		_, err := jwt.NewSerializer().
-			Sign(jwt.WithKey(jwa.HS256(), []byte("abracadabra"), jwe.WithCompress(jwa.Deflate()))).
+			Sign(jwt.WithKey(jwa.HS256(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), jwe.WithCompress(jwa.Deflate()))).
 			Serialize(jwt.New())
 		require.Error(t, err, `Serialize() should fail`)
 	})
 	t.Run(`Invalid SignatureAglrotihm`, func(t *testing.T) {
 		_, err := jwt.NewSerializer().
-			Encrypt(jwt.WithKey(jwa.A256KW(), []byte("abracadabra"))).
+			Encrypt(jwt.WithKey(jwa.A256KW(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))).
 			Serialize(jwt.New())
 		require.Error(t, err, `Serialize() should succeedl`)
 	})
 	t.Run(`Invalid encrypt suboption`, func(t *testing.T) {
 		_, err := jwt.NewSerializer().
-			Encrypt(jwt.WithKey(jwa.A256KW(), []byte("abracadabra"), jws.WithPretty(true))).
+			Encrypt(jwt.WithKey(jwa.A256KW(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), jws.WithPretty(true))).
 			Serialize(jwt.New())
 		require.Error(t, err, `Serialize() should fail`)
 	})
 	t.Run(`Invalid KeyEncryptionAglrotihm`, func(t *testing.T) {
 		_, err := jwt.NewSerializer().
-			Encrypt(jwt.WithKey(jwa.HS256(), []byte("abracadabra"))).
+			Encrypt(jwt.WithKey(jwa.HS256(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))).
 			Serialize(jwt.New())
 		require.Error(t, err, `Serialize() should succeedl`)
 	})
@@ -2260,7 +2260,7 @@ func TestGH1175(t *testing.T) {
 		Expiration(time.Now().Add(-1 * time.Hour)).
 		Build()
 	require.NoError(t, err, `jwt.NewBuilder should succeed`)
-	secret := []byte("secret")
+	secret := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	signed, err := jwt.Sign(token, jwt.WithKey(jwa.HS256(), secret))
 	require.NoError(t, err, `jwt.Sign should succeed`)
 
@@ -2274,13 +2274,13 @@ func TestGH1175(t *testing.T) {
 
 func TestGH1482(t *testing.T) {
 	tok, _ := jwt.NewBuilder().Issuer("github.com/lestrrat-go/jwx").Build()
-	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.HS256(), []byte("secret")))
+	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.HS256(), []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")))
 	require.NoError(t, err, `jwt.Sign should succeed`)
 
 	var markerValue any
 	kp := jws.KeyProviderFunc(func(ctx context.Context, sink jws.KeySink, _ *jws.Signature, _ *jws.Message) error {
 		markerValue = ctx.Value("marker")
-		key, err := jwk.Import[jwk.Key]([]byte("secret"))
+		key, err := jwk.Import[jwk.Key]([]byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 		if err != nil {
 			return err
 		}
@@ -2311,7 +2311,7 @@ func TestGH1484(t *testing.T) {
 		{Name: "null_jti", Payload: `{"jti":null}`},
 	}
 
-	key, err := jwk.Import[jwk.Key]([]byte("abracadabra"))
+	key, err := jwk.Import[jwk.Key]([]byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))
 	require.NoError(t, err, `jwk.Import should succeed`)
 
 	t.Run("default accepts null", func(t *testing.T) {

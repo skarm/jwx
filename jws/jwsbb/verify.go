@@ -9,6 +9,7 @@ import (
 
 	"github.com/lestrrat-go/dsig"
 	"github.com/lestrrat-go/jwx/v4/internal/keyconv"
+	jwsbbi "github.com/lestrrat-go/jwx/v4/jws/internal/jwsbb"
 )
 
 // Verify verifies a JWS signature using the specified key and algorithm.
@@ -45,9 +46,9 @@ func VerifyWithOpts(key any, alg string, payload, signature []byte, opts crypto.
 
 	switch dsigInfo.Family {
 	case dsig.HMAC:
-		return dispatchHMACVerify(key, dsigAlg, payload, signature)
+		return dispatchHMACVerify(key, alg, dsigAlg, payload, signature)
 	case dsig.RSA:
-		return dispatchRSAVerify(key, dsigAlg, payload, signature)
+		return dispatchRSAVerify(key, alg, dsigAlg, payload, signature)
 	case dsig.ECDSA:
 		return dispatchECDSAVerify(key, dsigAlg, payload, signature)
 	case dsig.EdDSAFamily:
@@ -59,16 +60,19 @@ func VerifyWithOpts(key any, alg string, payload, signature []byte, opts crypto.
 	}
 }
 
-func dispatchHMACVerify(key any, dsigAlg string, payload, signature []byte) error {
+func dispatchHMACVerify(key any, joseAlg, dsigAlg string, payload, signature []byte) error {
 	hmackey, err := keyconv.KeyAs[[]byte](key)
 	if err != nil {
 		return fmt.Errorf(`jwsbb.Verify: invalid key type %T. []byte is required: %w`, key, err)
 	}
 
+	if err := jwsbbi.RequireKeySize(joseAlg, hmackey); err != nil {
+		return err
+	}
 	return dsig.Verify(hmackey, dsigAlg, payload, signature)
 }
 
-func dispatchRSAVerify(key any, dsigAlg string, payload, signature []byte) error {
+func dispatchRSAVerify(key any, joseAlg, dsigAlg string, payload, signature []byte) error {
 	// A malformed ed25519 key (value or pointer) satisfies crypto.Signer but
 	// panics in Public(). Reject it before the crypto.Signer probe below, which
 	// a cross-family caller (ed25519 key + RSA alg) could otherwise reach.
@@ -79,7 +83,10 @@ func dispatchRSAVerify(key any, dsigAlg string, payload, signature []byte) error
 	// Try crypto.Signer first (dsig can handle it directly)
 	if signer, ok := key.(crypto.Signer); ok {
 		// Verify it's an RSA key
-		if _, ok := signer.Public().(*rsa.PublicKey); ok {
+		if pub, ok := signer.Public().(*rsa.PublicKey); ok {
+			if err := jwsbbi.RequireKeySize(joseAlg, pub); err != nil {
+				return err
+			}
 			return dsig.Verify(signer, dsigAlg, payload, signature)
 		}
 	}
@@ -90,6 +97,9 @@ func dispatchRSAVerify(key any, dsigAlg string, payload, signature []byte) error
 		return fmt.Errorf(`jwsbb.Verify: invalid key type %T. *rsa.PublicKey is required: %w`, key, err)
 	}
 
+	if err := jwsbbi.RequireKeySize(joseAlg, pubkey); err != nil {
+		return err
+	}
 	return dsig.Verify(pubkey, dsigAlg, payload, signature)
 }
 

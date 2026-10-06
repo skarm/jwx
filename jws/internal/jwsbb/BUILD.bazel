@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "ecdsacurve.go",
         "header.go",
+        "keysize.go",
     ],
     importpath = "github.com/lestrrat-go/jwx/v4/jws/internal/jwsbb",
     visibility = ["//jws:__subpackages__"],
