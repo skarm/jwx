@@ -99,8 +99,10 @@ func Example_jwt_parse() {
 source: [examples/jwt_parse_example_test.go](https://github.com/jwx-go/examples/blob/v4/jwt_parse_example_test.go)
 <!-- END INCLUDE -->
 
-Note that the above form performs only signature verification and no validation of the JWT token itself.
-In order to perform validation, please use `Validate()`.
+`jwt.Parse` verifies the signature and validates the token by default. Pass validation options such as
+`jwt.WithIssuer` and `jwt.WithAudience` to require application-specific claim values. Use
+`jwt.WithValidate(false)` only when claim validation is intentionally deferred; `jwt.Validate` can
+validate an already parsed token.
 
 ## Parse a JWT from a filesystem
 
@@ -1747,3 +1749,5 @@ source: [examples/jwt_sign_with_custom_base64_example_test.go](https://github.co
 <!-- END INCLUDE -->
 
 You can use these option for `jws.Sign` and `jws.Verify` as well. See the [JWS docs for an example](./02-jwt.md#using-a-custom-base64-encoder).
+
+JWT payloads must be base64url encoded. Parsing rejects a JWS with `b64=false` even when a verify option permits the `b64` critical extension or signature verification is disabled, as required by RFC 7797 section 7. Use the `jws` package for generic unencoded JWS payloads.

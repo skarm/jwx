@@ -212,3 +212,7 @@ Do not re-flag this as a UX or security finding (adversarial review JWA-20260426
 Examples and benchmarks are external companion repos (`github.com/jwx-go/examples`, `github.com/jwx-go/benchmarks`), locally available via `go.work` when checked out.
 
 No `go.work` file is committed. Nested modules use `replace` directives for local development.
+
+JWT nonminimal-header fallback retains the verified JWS Message to enforce encoded JWT payloads. Minimal-header fast paths refuse b64-bearing headers; general and insecure nested parsing enforce the same JWT format rule.
+
+JWT encoded-payload enforcement respects the last caller-provided jws.WithMessage destination; an internal destination is used only when none is requested.

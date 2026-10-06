@@ -376,12 +376,37 @@ func verifyJWS(ctx *parseCtx, payload []byte) ([]byte, int, error) {
 		}
 	}
 
-	verifyOpts := append(ctx.verifyOpts, jws.WithCompact())
+	var message jws.Message
+	dst := &message
+	messageOption := jws.WithMessage(dst)
+	for _, opt := range ctx.verifyOpts {
+		if opt.Ident() == messageOption.Ident() {
+			dst = option.MustGet[*jws.Message](opt)
+		}
+	}
+	if dst == nil {
+		dst = &message
+	}
+	verifyOpts := append(ctx.verifyOpts, jws.WithCompact(), jws.WithMessage(dst))
 	verified, err := jws.Verify(payload, verifyOpts...)
 	if err != nil {
 		return nil, _JwsVerifyDone, err
 	}
+	if err := requireEncodedJWTPayload(dst); err != nil {
+		return nil, _JwsVerifyDone, err
+	}
 	return verified, peekJWSNestedState(ctx, payload), nil
+}
+
+// RFC 7797 section 7 forbids unencoded payloads in JWTs, even when the
+// caller understands the b64 extension or deliberately skips verification.
+func requireEncodedJWTPayload(message *jws.Message) error {
+	for _, signature := range message.Signatures() {
+		if b64, err := jws.Get[bool](signature.ProtectedHeaders(), "b64"); err == nil && !b64 {
+			return fmt.Errorf(`JWT payload must be base64url encoded (RFC 7797 section 7)`)
+		}
+	}
+	return nil
 }
 
 // peekJWSNestedState returns _JwsVerifyExpectNested when pedantic mode is on
@@ -501,6 +526,9 @@ OUTER:
 			m, err := jws.Parse(payload, jws.WithCompact())
 			if err != nil {
 				return nil, fmt.Errorf(`invalid jws message: %w`, err)
+			}
+			if err := requireEncodedJWTPayload(m); err != nil {
+				return nil, err
 			}
 			payload = m.Payload()
 		default:

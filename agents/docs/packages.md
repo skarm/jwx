@@ -162,3 +162,5 @@ Shared utilities. Not public API.
 | `jwxtest` | Test key generation helpers (RSA, ECDSA, Ed25519, symmetric) |
 | `tokens` | String constants for algorithm names and separators |
 | `pool` | Generic object pool (`Pool[T]`, `SlicePool[T]`) |
+
+JWT parsing requires base64url-encoded JWS payloads (RFC 7797 section 7). `b64=false` is rejected even with a declared b64 critical extension, disabled crit checks or ParseInsecure. Generic JWS support for b64=false remains available.

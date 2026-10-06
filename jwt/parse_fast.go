@@ -125,8 +125,13 @@ func parseCompactFast(data []byte, ctx *fastParseCtx) (Token, error) {
 // fails to split, so the extra cost is limited to adversarial / unusual
 // inputs.
 func parseCompactSlowFallback(data []byte, ctx *fastParseCtx) (Token, error) {
-	payload, err := jws.Verify(data, jws.WithCompact(), jws.WithKey(ctx.alg, ctx.key))
+	var message jws.Message
+	payload, err := jws.Verify(data, jws.WithCompact(), jws.WithKey(ctx.alg, ctx.key), jws.WithMessage(&message))
 	if err != nil {
+		return nil, parseErrorf(`jwt.Parse`, `%w`, err)
+	}
+
+	if err := requireEncodedJWTPayload(&message); err != nil {
 		return nil, parseErrorf(`jwt.Parse`, `%w`, err)
 	}
 

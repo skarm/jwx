@@ -2432,3 +2432,53 @@ func TestParseInsecureUnwrapsNestedJWS(t *testing.T) {
 	require.True(t, ok, `inner issuer claim should be present after unwrap`)
 	require.Equal(t, "nested-test", iss)
 }
+
+func TestJWTRequiresEncodedPayload(t *testing.T) {
+	key := bytes.Repeat([]byte{42}, 32)
+	for _, encoded := range []bool{false, true} {
+		h := jws.NewHeaders()
+		require.NoError(t, h.Set("b64", encoded))
+		wire, err := jws.Sign([]byte(`{"sub":"alice"}`), jws.WithKey(jwa.HS256(), key, jws.WithProtectedHeaders(h)))
+		require.NoError(t, err)
+		for _, opts := range [][]jwt.ParseOption{
+			{jwt.WithKey(jwa.HS256(), key), jwt.WithVerifyOption(jws.WithCritExtension("b64")), jwt.WithValidate(false)},
+			{jwt.WithKey(jwa.HS256(), key), jwt.WithVerifyOption(jws.WithCritValidation(false)), jwt.WithValidate(false)},
+			{jwt.WithVerify(false), jwt.WithValidate(false)},
+		} {
+			token, err := jwt.Parse(wire, opts...)
+			if encoded {
+				require.NoError(t, err)
+				sub, ok := token.Subject()
+				require.True(t, ok)
+				require.Equal(t, "alice", sub)
+			} else {
+				require.ErrorContains(t, err, "must be base64url encoded")
+				require.Nil(t, token)
+			}
+		}
+		token, err := jwt.ParseInsecure(wire)
+		if encoded {
+			require.NoError(t, err)
+			require.NotNil(t, token)
+		} else {
+			require.ErrorContains(t, err, "must be base64url encoded")
+		}
+	}
+	wire, err := jws.Sign([]byte(`{"sub":"alice"}`), jws.WithKey(jwa.HS256(), key))
+	require.NoError(t, err)
+	_, err = jwt.Parse(wire, jwt.WithKey(jwa.HS256(), key), jwt.WithValidate(false))
+	require.NoError(t, err)
+}
+
+func TestParsePreservesJWSMessageOption(t *testing.T) {
+	key := bytes.Repeat([]byte{42}, 32)
+	wire, err := jws.Sign([]byte(`{"sub":"alice"}`), jws.WithKey(jwa.HS256(), key))
+	require.NoError(t, err)
+	var first, last jws.Message
+	_, err = jwt.Parse(wire, jwt.WithKey(jwa.HS256(), key), jwt.WithValidate(false),
+		jwt.WithVerifyOption(jws.WithMessage(&first)), jwt.WithVerifyOption(jws.WithMessage(&last)))
+	require.NoError(t, err)
+	require.Empty(t, first.Signatures(), "the last WithMessage option takes precedence")
+	require.Len(t, last.Signatures(), 1)
+	require.Equal(t, []byte(`{"sub":"alice"}`), last.Payload())
+}
